@@ -46,6 +46,10 @@ RAZORPAY_KEY_ID = os.environ.get("RAZORPAY_KEY_ID", "rzp_test_placeholder")
 RAZORPAY_KEY_SECRET = os.environ.get("RAZORPAY_KEY_SECRET", "placeholder_secret")
 rzp_client = razorpay.Client(auth=(RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET))
 
+# WhatsApp Config (Business Number)
+BUSINESS_WHATSAPP = "+918421968737"
+WHATSAPP_API_KEY = os.environ.get("WHATSAPP_API_KEY", "")
+
 
 class User(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -241,6 +245,27 @@ async def get_current_admin(current_user: dict = Depends(get_current_user)):
     if current_user["type"] != "admin":
         raise HTTPException(status_code=403, detail="Admin access required")
     return current_user
+
+
+async def send_whatsapp_message(to_number: str, message: str):
+    try:
+        # Ensure number has + prefix
+        if not to_number.startswith('+'):
+            if len(to_number) == 10:
+                to_number = '+91' + to_number
+            else:
+                to_number = '+' + to_number
+                
+        print(f"Sending WhatsApp to {to_number}: {message}")
+        
+        # Here you would typically integrate with a provider like Twilio, Gupshup, or Meta Cloud API
+        if not WHATSAPP_API_KEY:
+            # For now, just logging since we don't have a provider yet
+            logging.info(f"WHATSAPP LOG: To {to_number} -> {message}")
+            return
+            
+    except Exception as e:
+        logging.error(f"Error sending WhatsApp: {e}")
 
 
 async def send_order_email(order: Order):
@@ -718,6 +743,15 @@ async def create_order(order_data: OrderCreate, current_user: dict = Depends(get
     
     await send_order_email(order)
     
+    whatsapp_msg = (
+        f"Hello {user['full_name']},\n\n"
+        f"Your order #{order.id[:8]} at VS Fashion has been placed successfully!\n"
+        f"Total Amount: ₹{order.total_amount:.2f}\n"
+        f"Status: {order.status}\n\n"
+        f"Thank you for shopping with us!"
+    )
+    await send_whatsapp_message(user['mobile'], whatsapp_msg)
+    
     return {"order_id": order.id, "message": "Order placed successfully"}
 
 
@@ -758,6 +792,20 @@ async def verify_payment(
             {"id": order_id},
             {"$set": {"status": "Paid", "payment_id": razorpay_payment_id, "razorpay_order_id": razorpay_order_id}}
         )
+        
+        # Send Payment Confirmation WhatsApp
+        order = await db.orders.find_one({"id": order_id})
+        if order:
+            user = await db.users.find_one({"id": order["user_id"]})
+            if user:
+                whatsapp_msg = (
+                    f"Hello {user['full_name']},\n\n"
+                    f"Payment for order #{order_id[:8]} at VS Fashion is successful!\n"
+                    f"Transaction ID: {razorpay_payment_id}\n\n"
+                    f"We will process and ship your order within 4 days. Thank you!"
+                )
+                await send_whatsapp_message(user['mobile'], whatsapp_msg)
+
         return {"status": "success"}
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid payment signature")
