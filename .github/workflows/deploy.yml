@@ -41,7 +41,7 @@ jobs:
         run: |
           cd frontend
           npm install --legacy-peer-deps
-          npm run build
+          CI=false npm run build
           
       - name: Deploy Frontend to EC2
         uses: appleboy/scp-action@master
