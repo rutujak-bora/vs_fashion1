@@ -342,22 +342,55 @@ async def register(user_data: UserRegister):
 
 @api_router.post("/auth/login")
 async def login(user_data: UserLogin):
-    user = await db.users.find_one({"email": user_data.email}, {"_id": 0})
-    if not user or not verify_password(user_data.password, user["password_hash"]):
-        raise HTTPException(status_code=401, detail="Invalid credentials")
-    
-    token = create_token({"sub": user["id"], "type": "user"})
-    return {"token": token, "user": {"id": user["id"], "email": user["email"], "full_name": user["full_name"]}}
+    try:
+        user = await db.users.find_one({"email": user_data.email}, {"_id": 0})
+        if not user or not verify_password(user_data.password, user["password_hash"]):
+            raise HTTPException(status_code=401, detail="Invalid credentials")
+        
+        user_id = user.get("id")
+        if not user_id:
+            logger.warning(f"User {user_data.email} is missing 'id' field")
+            # Fallback to a new ID if missing (or you could raise an error)
+            user_id = str(uuid.uuid4())
+            
+        token = create_token({"sub": user_id, "type": "user"})
+        return {"token": token, "user": {"id": user_id, "email": user["email"], "full_name": user["full_name"]}}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error in user login: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Internal Server Error: {str(e)}")
 
 
 @api_router.post("/auth/admin/login")
 async def admin_login(user_data: UserLogin):
-    admin = await db.admins.find_one({"email": user_data.email}, {"_id": 0})
-    if not admin or not verify_password(user_data.password, admin["password_hash"]):
-        raise HTTPException(status_code=401, detail="Invalid admin credentials")
-    
-    token = create_token({"sub": admin["id"], "type": "admin"})
-    return {"token": token, "admin": {"id": admin["id"], "email": admin["email"]}}
+    try:
+        admin = await db.admins.find_one({"email": user_data.email}, {"_id": 0})
+        if not admin:
+            raise HTTPException(status_code=401, detail="Invalid admin credentials")
+            
+        password_hash = admin.get("password_hash")
+        if not password_hash:
+            logger.error(f"Admin {user_data.email} is missing password_hash")
+            raise HTTPException(status_code=500, detail="Admin account misconfigured (missing password hash)")
+
+        if not verify_password(user_data.password, password_hash):
+            raise HTTPException(status_code=401, detail="Invalid admin credentials")
+        
+        # Ensure we have an ID for the token
+        admin_id = admin.get("id")
+        if not admin_id:
+            logger.warning(f"Admin {user_data.email} is missing 'id' field, using fallback")
+            admin_id = str(uuid.uuid4())
+            # We don't update here to keep it read-only, but it prevents the 500 error
+        
+        token = create_token({"sub": admin_id, "type": "admin"})
+        return {"token": token, "admin": {"id": admin_id, "email": admin["email"]}}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error in admin_login: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Internal Server Error: {str(e)}")
 
 
 @api_router.get("/collections", response_model=List[Collection])
@@ -831,14 +864,23 @@ logger = logging.getLogger(__name__)
 
 @app.on_event("startup")
 async def startup_db():
-    admin_exists = await db.admins.find_one({"email": "vsfashiiiion@gmail.com"}, {"_id": 0})
-    if not admin_exists:
-        admin = Admin(
-            email="vsfashiiiion@gmail.com",
+    # Use vsfashiiiion@gmail.com as the default admin
+    admin_email = "vsfashiiiion@gmail.com"
+    admin = await db.admins.find_one({"email": admin_email})
+    
+    if not admin:
+        admin_obj = Admin(
+            email=admin_email,
             password_hash=hash_password("vs@54321")
         )
-        await db.admins.insert_one(admin.model_dump())
-        logger.info("Default admin account created")
+        await db.admins.insert_one(admin_obj.model_dump())
+        logger.info(f"Default admin account created: {admin_email}")
+    else:
+        # Self-healing: ensure existing admin has an 'id' field
+        if "id" not in admin:
+            new_id = str(uuid.uuid4())
+            await db.admins.update_one({"_id": admin["_id"]}, {"$set": {"id": new_id}})
+            logger.info(f"Updated existing admin {admin_email} with missing ID: {new_id}")
 
 
 @app.on_event("shutdown")
