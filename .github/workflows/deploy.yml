@@ -54,6 +54,15 @@ jobs:
           target: "/home/ubuntu/frontend/build_new"
           strip_components: 2
 
+      - name: Deploy Nginx Config
+        uses: appleboy/scp-action@master
+        with:
+          host: ${{ secrets.FRONTEND_IP }}
+          username: ubuntu
+          key: ${{ secrets.FRONTEND_SSH_KEY }}
+          source: "vs-frontend.nginx"
+          target: "/home/ubuntu/"
+
       - name: Update Live Frontend
         uses: appleboy/ssh-action@master
         with:
@@ -65,4 +74,9 @@ jobs:
             sudo rm -rf /home/ubuntu/frontend/build_old
             [ -d "/home/ubuntu/frontend/build" ] && mv /home/ubuntu/frontend/build /home/ubuntu/frontend/build_old
             mv /home/ubuntu/frontend/build_new /home/ubuntu/frontend/build
+            
+            # Apply Nginx Config
+            sudo cp /home/ubuntu/vs-frontend.nginx /etc/nginx/sites-available/vs-frontend
+            sudo ln -sf /etc/nginx/sites-available/vs-frontend /etc/nginx/sites-enabled/
+            sudo rm -f /etc/nginx/sites-enabled/default
             sudo systemctl restart nginx
