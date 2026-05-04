@@ -19,6 +19,9 @@ import TermsConditions from '@/pages/customer/TermsConditions';
 import FAQ from '@/pages/customer/FAQ';
 import Register from '@/pages/customer/Register';
 import Login from '@/pages/customer/Login';
+import PrivacyPolicy from '@/pages/customer/PrivacyPolicy';
+import RefundPolicy from '@/pages/customer/RefundPolicy';
+import ShippingPolicy from '@/pages/customer/ShippingPolicy';
 
 import AdminLogin from '@/pages/admin/AdminLogin';
 import AdminDashboard from '@/pages/admin/AdminDashboard';
@@ -59,6 +62,9 @@ function App() {
             <Route path="dashboard" element={<ProtectedRoute><CustomerDashboard /></ProtectedRoute>} />
             <Route path="about" element={<AboutUs />} />
             <Route path="terms" element={<TermsConditions />} />
+            <Route path="privacy" element={<PrivacyPolicy />} />
+            <Route path="refund" element={<RefundPolicy />} />
+            <Route path="shipping" element={<ShippingPolicy />} />
             <Route path="faq" element={<FAQ />} />
           </Route>
           

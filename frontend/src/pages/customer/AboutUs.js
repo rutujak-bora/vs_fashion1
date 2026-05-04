@@ -98,10 +98,10 @@ export default function AboutUs() {
                   <img src="/images/about/at the workshop.jpeg" alt="Master artisan block printing" className="w-full h-full object-cover" />
                 </div>
                 <div className="aspect-[3/4] rounded-2xl overflow-hidden shadow-lg border-4 border-white transform transition duration-500 hover:-translate-y-2">
-                  <img src="/images/about/process detail.jpeg" alt="Traditional wooden block" className="w-full h-full object-cover" />
+                  <img src="/images/about/process details.jpeg" alt="Traditional wooden block" className="w-full h-full object-cover" />
                 </div>
                 <div className="aspect-[3/4] rounded-2xl overflow-hidden shadow-lg border-4 border-white transform transition duration-500 hover:-translate-y-2 lg:translate-y-8">
-                  <img src="/images/about/traditinal wodden block.jpeg" alt="Process details" className="w-full h-full object-cover" />
+                  <img src="/images/about/traditional wooden block.jpeg" alt="Process details" className="w-full h-full object-cover" />
                 </div>
               </div>
 

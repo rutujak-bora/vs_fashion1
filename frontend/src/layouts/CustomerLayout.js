@@ -206,6 +206,15 @@ export default function CustomerLayout() {
               <Link to="/terms" data-testid="footer-terms-link" className="text-sm text-white/80 hover:text-white transition-colors">
                 Terms & Conditions
               </Link>
+              <Link to="/privacy" data-testid="footer-privacy-link" className="text-sm text-white/80 hover:text-white transition-colors">
+                Privacy Policy
+              </Link>
+              <Link to="/refund" data-testid="footer-refund-link" className="text-sm text-white/80 hover:text-white transition-colors">
+                Refund Policy
+              </Link>
+              <Link to="/shipping" data-testid="footer-shipping-link" className="text-sm text-white/80 hover:text-white transition-colors">
+                Shipping Policy
+              </Link>
               <Link to="/faq" data-testid="footer-faq-link" className="text-sm text-white/80 hover:text-white transition-colors">
                 FAQ
               </Link>

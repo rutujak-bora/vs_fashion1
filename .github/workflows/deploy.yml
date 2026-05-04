@@ -41,7 +41,7 @@ jobs:
         run: |
           cd frontend
           npm install --legacy-peer-deps
-          CI=false npm run build
+          REACT_APP_BACKEND_URL="http://${{ secrets.BACKEND_IP }}:8000" CI=false npm run build
           
       - name: Deploy Frontend to EC2
         uses: appleboy/scp-action@master
