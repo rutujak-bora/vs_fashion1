@@ -25,6 +25,8 @@ jobs:
               python3 -m venv venv
             fi
             ./venv/bin/pip install -r requirements.txt
+            # Seed policies to ensure DB is up to date
+            ./venv/bin/python seed_policies.py
             sudo systemctl restart vs-backend.service
 
   deploy-frontend:
