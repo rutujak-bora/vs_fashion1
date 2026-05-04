@@ -199,6 +199,10 @@ export default function CustomerLayout() {
             <h4 className="text-sm uppercase tracking-widest mb-4 font-semibold">Contact</h4>
             <p className="text-sm text-white/80">Email: vsfashiiiion@gmail.com</p>
             <p className="text-sm text-white/80 mt-2">Phone: +91 84219 68737</p>
+            <p className="text-sm text-white/80 mt-2">
+              Address: Sr. No. 162/2B/3, Dhamdhere Building, <br />
+              Near Sutar Hospital, Kothrud, Pune, Maharashtra, India
+            </p>
           </div>
           <div>
             <h4 className="text-sm uppercase tracking-widest mb-4 font-semibold">Information</h4>
@@ -217,6 +221,9 @@ export default function CustomerLayout() {
               </Link>
               <Link to="/faq" data-testid="footer-faq-link" className="text-sm text-white/80 hover:text-white transition-colors">
                 FAQ
+              </Link>
+              <Link to="/contact" data-testid="footer-contact-link" className="text-sm text-white/80 hover:text-white transition-colors">
+                Contact Us
               </Link>
             </div>
           </div>
