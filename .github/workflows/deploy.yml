@@ -15,7 +15,7 @@ jobs:
         with:
           host: ${{ secrets.BACKEND_IP }}
           username: ubuntu
-          key: ${{ secrets.EC2_SSH_KEY }}
+          key: ${{ secrets.BACKEND_SSH_KEY }}
           script: |
             cd /home/ubuntu/backend
             git remote set-url origin https://github.com/rutujak-bora/vs_fashion1.git
@@ -54,7 +54,7 @@ jobs:
         with:
           host: ${{ secrets.FRONTEND_IP }}
           username: ubuntu
-          key: ${{ secrets.EC2_SSH_KEY }}
+          key: ${{ secrets.FRONTEND_SSH_KEY }}
           source: "frontend/build/*"
           target: "/home/ubuntu/frontend/build_new"
           strip_components: 2
@@ -64,7 +64,7 @@ jobs:
         with:
           host: ${{ secrets.FRONTEND_IP }}
           username: ubuntu
-          key: ${{ secrets.EC2_SSH_KEY }}
+          key: ${{ secrets.FRONTEND_SSH_KEY }}
           script: |
             # Atomic swap of build directory
             sudo rm -rf /home/ubuntu/frontend/build_old
