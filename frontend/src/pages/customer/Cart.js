@@ -6,7 +6,7 @@ import useStore from '@/store/useStore';
 import { Button } from '@/components/ui/button';
 import { Trash2 } from 'lucide-react';
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || '';
 const API = `${BACKEND_URL}/api`;
 
 export default function Cart() {
