@@ -200,8 +200,8 @@ export default function CustomerLayout() {
             <p className="text-sm text-white/80">Email: vsfashiiiion@gmail.com</p>
             <p className="text-sm text-white/80 mt-2">Phone: +91 84219 68737</p>
             <p className="text-sm text-white/80 mt-2">
-              Address: Sr. No. 162/2B/3, Dhamdhere Building, <br />
-              Near Sutar Hospital, Kothrud, Pune, Maharashtra, India
+              Address: Gulab shrushti by Rajendra buttepatil <br />
+              3rd floor 301, Kothrud, Pune, Maharashtra 411038
             </p>
           </div>
           <div>

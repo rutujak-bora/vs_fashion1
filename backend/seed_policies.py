@@ -68,9 +68,9 @@ If you have any questions, concerns, or support requests, you can reach us at:
 Email: vsfashiiiion@gmail.com
 Phone: +91 84219 68737
 Address:
-Sr. No. 162/2B/3, Dhamdhere Building,
-Near Sutar Hospital, Kothrud,
-Pune, Maharashtra, India
+Gulab shrushti by Rajendra buttepatil
+3rd floor 301,Kothrud Pune
+maharashtra 411038
             """,
             "updated_at": datetime.now(timezone.utc).isoformat()
         }
