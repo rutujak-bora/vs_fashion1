@@ -13,7 +13,7 @@ jobs:
       - name: Deploy Backend to EC2
         uses: appleboy/ssh-action@master
         with:
-          host: 13.233.142.230
+          host: ${{ secrets.BACKEND_IP }}
           username: ubuntu
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
@@ -52,7 +52,7 @@ jobs:
       - name: Deploy Frontend to EC2
         uses: appleboy/scp-action@master
         with:
-          host: 65.2.180.101
+          host: ${{ secrets.FRONTEND_IP }}
           username: ubuntu
           key: ${{ secrets.EC2_SSH_KEY }}
           source: "frontend/build/*"
@@ -62,7 +62,7 @@ jobs:
       - name: Update Live Frontend
         uses: appleboy/ssh-action@master
         with:
-          host: 65.2.180.101
+          host: ${{ secrets.FRONTEND_IP }}
           username: ubuntu
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
