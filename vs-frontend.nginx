@@ -2,6 +2,28 @@ server {
     listen 80;
     server_name 65.2.180.101 vs-fashion.com www.vs-fashion.com;
 
+    if ($host = www.vs-fashion.com) {
+        return 301 https://$host$request_uri;
+    }
+
+    if ($host = vs-fashion.com) {
+        return 301 https://$host$request_uri;
+    }
+
+    location / {
+        root /home/ubuntu/frontend/build;
+        index index.html;
+        try_files $uri $uri/ /index.html;
+    }
+}
+
+server {
+    listen 443 ssl;
+    server_name vs-fashion.com www.vs-fashion.com;
+
+    ssl_certificate /etc/letsencrypt/live/vs-fashion.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/vs-fashion.com/privkey.pem;
+
     location / {
         root /home/ubuntu/frontend/build;
         index index.html;
