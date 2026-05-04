@@ -41,6 +41,7 @@ jobs:
         run: |
           cd frontend
           npm install --legacy-peer-deps
+          npm install ajv@^8 --legacy-peer-deps
           REACT_APP_BACKEND_URL="http://${{ secrets.BACKEND_IP }}:8000" CI=false npm run build
           
       - name: Deploy Frontend to EC2
