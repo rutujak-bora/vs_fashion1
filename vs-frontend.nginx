@@ -1,0 +1,10 @@
+server {
+    listen 80;
+    server_name 65.2.180.101 vs-fashion.com www.vs-fashion.com;
+
+    location / {
+        root /home/ubuntu/frontend/build;
+        index index.html;
+        try_files $uri $uri/ /index.html;
+    }
+}
