@@ -19,6 +19,7 @@ from email.mime.multipart import MIMEMultipart
 import shutil
 import boto3
 from botocore.exceptions import NoCredentialsError, ClientError
+import razorpay
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -39,6 +40,11 @@ UPLOAD_DIR = ROOT_DIR / "uploads"
 UPLOAD_DIR.mkdir(exist_ok=True)
 
 app.mount("/uploads", StaticFiles(directory=str(UPLOAD_DIR)), name="uploads")
+
+# Razorpay Client
+RAZORPAY_KEY_ID = os.environ.get("RAZORPAY_KEY_ID", "rzp_test_placeholder")
+RAZORPAY_KEY_SECRET = os.environ.get("RAZORPAY_KEY_SECRET", "placeholder_secret")
+rzp_client = razorpay.Client(auth=(RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET))
 
 
 class User(BaseModel):
@@ -167,6 +173,8 @@ class Order(BaseModel):
     items: List[OrderItem]
     total_amount: float
     status: str = "Pending"
+    payment_id: Optional[str] = None
+    razorpay_order_id: Optional[str] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
@@ -711,6 +719,48 @@ async def create_order(order_data: OrderCreate, current_user: dict = Depends(get
     await send_order_email(order)
     
     return {"order_id": order.id, "message": "Order placed successfully"}
+
+
+@api_router.post("/payments/create-order")
+async def create_razorpay_order(amount: float, current_user: dict = Depends(get_current_user)):
+    try:
+        # Amount in paise (multiply by 100)
+        data = {
+            "amount": int(amount * 100),
+            "currency": "INR",
+            "receipt": f"receipt_{uuid.uuid4().hex[:10]}",
+            "payment_capture": 1
+        }
+        order = rzp_client.order.create(data=data)
+        return order
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.post("/payments/verify")
+async def verify_payment(
+    order_id: str = Form(...),
+    razorpay_order_id: str = Form(...),
+    razorpay_payment_id: str = Form(...),
+    razorpay_signature: str = Form(...),
+    current_user: dict = Depends(get_current_user)
+):
+    try:
+        params_dict = {
+            'razorpay_order_id': razorpay_order_id,
+            'razorpay_payment_id': razorpay_payment_id,
+            'razorpay_signature': razorpay_signature
+        }
+        rzp_client.utility.verify_payment_signature(params_dict)
+        
+        # Update order status
+        await db.orders.update_one(
+            {"id": order_id},
+            {"$set": {"status": "Paid", "payment_id": razorpay_payment_id, "razorpay_order_id": razorpay_order_id}}
+        )
+        return {"status": "success"}
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid payment signature")
 
 
 @api_router.get("/orders")

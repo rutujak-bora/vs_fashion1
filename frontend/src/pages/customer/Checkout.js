@@ -43,31 +43,83 @@ export default function Checkout() {
     }
 
     setPlacing(true);
-    try {
-      const orderItems = cartItems.map(item => ({
-        product_id: item.product_id,
-        product_name: item.product_name,
-        size: item.size,
-        quantity: item.quantity,
-        price: item.product_price
-      }));
+    const total = calculateTotal();
 
-      const response = await axios.post(
-        `${API}/orders`,
-        {
-          items: orderItems,
-          total_amount: calculateTotal()
-        },
-        {
-          headers: { Authorization: `Bearer ${token}` }
-        }
+    try {
+      // 1. Create Razorpay Order
+      const rzpOrderResponse = await axios.post(
+        `${API}/payments/create-order`,
+        { amount: total },
+        { headers: { Authorization: `Bearer ${token}` } }
       );
 
-      clearCart();
-      toast.success('Order placed successfully!');
-      navigate('/dashboard');
+      const rzpOrder = rzpOrderResponse.data;
+
+      // 2. Open Razorpay Checkout
+      const options = {
+        key: process.env.REACT_APP_RAZORPAY_KEY_ID || 'rzp_test_placeholder', // Should be in .env
+        amount: rzpOrder.amount,
+        currency: rzpOrder.currency,
+        name: "VS Fashion",
+        description: "Purchase from VS Fashion",
+        order_id: rzpOrder.id,
+        handler: async function (response) {
+          try {
+            // 3. Create order in our database
+            const orderItems = cartItems.map(item => ({
+              product_id: item.product_id,
+              product_name: item.product_name,
+              size: item.size,
+              quantity: item.quantity,
+              price: item.product_price
+            }));
+
+            const ourOrderResponse = await axios.post(
+              `${API}/orders`,
+              {
+                items: orderItems,
+                total_amount: total
+              },
+              { headers: { Authorization: `Bearer ${token}` } }
+            );
+
+            const ourOrderId = ourOrderResponse.data.order_id;
+
+            // 4. Verify payment on backend
+            const formData = new FormData();
+            formData.append('order_id', ourOrderId);
+            formData.append('razorpay_order_id', response.razorpay_order_id);
+            formData.append('razorpay_payment_id', response.razorpay_payment_id);
+            formData.append('razorpay_signature', response.razorpay_signature);
+
+            await axios.post(`${API}/payments/verify`, formData, {
+              headers: { Authorization: `Bearer ${token}` }
+            });
+
+            clearCart();
+            toast.success('Order placed successfully!');
+            navigate('/dashboard');
+          } catch (err) {
+            console.error('Payment verification failed:', err);
+            toast.error('Payment verification failed. Please contact support.');
+          }
+        },
+        prefill: {
+          name: user?.full_name,
+          email: user?.email,
+          contact: user?.mobile
+        },
+        theme: {
+          color: "#8B1B4A"
+        }
+      };
+
+      const rzp = new window.Razorpay(options);
+      rzp.open();
+
     } catch (error) {
-      toast.error(error.response?.data?.detail || 'Failed to place order');
+      console.error('Error initiating payment:', error);
+      toast.error(error.response?.data?.detail || 'Failed to initiate payment');
     } finally {
       setPlacing(false);
     }
@@ -118,7 +170,7 @@ export default function Checkout() {
         <h2 className="text-2xl mb-4" style={{ fontFamily: 'Playfair Display' }}>
           Payment Method
         </h2>
-        <p className="text-gray-700">Cash on Delivery</p>
+        <p className="text-gray-700">Online Payment (Razorpay)</p>
       </div>
 
       <Button
