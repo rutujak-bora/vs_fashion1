@@ -80,3 +80,13 @@ jobs:
             sudo ln -sf /etc/nginx/sites-available/vs-frontend /etc/nginx/sites-enabled/
             sudo rm -f /etc/nginx/sites-enabled/default
             sudo systemctl restart nginx
+            
+            # Setup SSL via Certbot (Only if not already configured)
+            if [ ! -d "/etc/letsencrypt/live/vs-fashion.com" ]; then
+              echo "Installing Certbot and generating SSL..."
+              sudo apt update
+              sudo apt install -y certbot python3-certbot-nginx
+              sudo certbot --nginx -d vs-fashion.com -d www.vs-fashion.com --non-interactive --agree-tos -m vsfashiiiion@gmail.com --redirect
+            else
+              echo "SSL Certificate already exists for vs-fashion.com. Skipping."
+            fi
