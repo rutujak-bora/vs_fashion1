@@ -20,6 +20,14 @@ import shutil
 import boto3
 from botocore.exceptions import NoCredentialsError, ClientError
 import razorpay
+import logging
+
+# Logging configuration
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -398,31 +406,42 @@ async def login(user_data: UserLogin):
 @api_router.post("/auth/admin/login")
 async def admin_login(user_data: UserLogin):
     try:
-        admin = await db.admins.find_one({"email": user_data.email}, {"_id": 0})
+        email = str(user_data.email).lower().strip()
+        logger.info(f"Admin login attempt for: {email}")
+        
+        admin = await db.admins.find_one({"email": email})
         if not admin:
+            logger.warning(f"Admin not found: {email}")
             raise HTTPException(status_code=401, detail="Invalid admin credentials")
             
         password_hash = admin.get("password_hash")
         if not password_hash:
-            logger.error(f"Admin {user_data.email} is missing password_hash")
-            raise HTTPException(status_code=500, detail="Admin account misconfigured (missing password hash)")
+            logger.error(f"Admin {email} is missing password_hash in DB")
+            raise HTTPException(status_code=500, detail="Admin account misconfigured")
 
         if not verify_password(user_data.password, password_hash):
+            logger.warning(f"Invalid password for admin: {email}")
             raise HTTPException(status_code=401, detail="Invalid admin credentials")
         
-        # Ensure we have an ID for the token
-        admin_id = admin.get("id")
+        admin_id = admin.get("id") or admin.get("_id")
         if not admin_id:
-            logger.warning(f"Admin {user_data.email} is missing 'id' field, using fallback")
             admin_id = str(uuid.uuid4())
-            # We don't update here to keep it read-only, but it prevents the 500 error
+            logger.warning(f"Admin {email} missing ID, generated temporary: {admin_id}")
+        else:
+            admin_id = str(admin_id)
         
-        token = create_token({"sub": admin_id, "type": "admin"})
-        return {"token": token, "admin": {"id": admin_id, "email": admin["email"]}}
+        try:
+            token = create_token({"sub": admin_id, "type": "admin"})
+        except Exception as token_err:
+            logger.error(f"Token creation failed: {str(token_err)}")
+            raise HTTPException(status_code=500, detail="Failed to generate authentication token")
+            
+        logger.info(f"Admin logged in successfully: {email}")
+        return {"token": token, "admin": {"id": admin_id, "email": email}}
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Unexpected error in admin_login: {str(e)}", exc_info=True)
+        logger.error(f"CRITICAL: Unexpected error in admin_login: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Internal Server Error: {str(e)}")
 
 
@@ -979,11 +998,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
+# End of router definitions
 
 
 @app.on_event("startup")
