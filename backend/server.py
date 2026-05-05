@@ -403,6 +403,15 @@ async def login(user_data: UserLogin):
         raise HTTPException(status_code=500, detail=f"Internal Server Error: {str(e)}")
 
 
+@api_router.get("/health")
+async def health_check():
+    try:
+        await client.admin.command('ping')
+        return {"status": "ok", "database": "connected"}
+    except Exception as e:
+        return {"status": "error", "database": str(e)}
+
+
 @api_router.post("/auth/admin/login")
 async def admin_login(user_data: UserLogin):
     try:
