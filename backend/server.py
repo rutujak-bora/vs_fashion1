@@ -902,6 +902,7 @@ async def get_content(page_id: str):
 @api_router.get("/debug/seed")
 async def debug_seed():
     import subprocess
+    import os
     try:
         result = subprocess.run(
             ["python3", "seed_policies.py"],
@@ -909,10 +910,16 @@ async def debug_seed():
             text=True,
             cwd=ROOT_DIR
         )
+        # Mask Mongo URL
+        raw_url = os.environ.get("MONGO_URL", "NOT_FOUND")
+        masked_url = raw_url.split("@")[-1] if "@" in raw_url else "HIDDEN"
+        
         return {
             "stdout": result.stdout,
             "stderr": result.stderr,
-            "returncode": result.returncode
+            "returncode": result.returncode,
+            "db_name": os.environ.get("DB_NAME"),
+            "mongo_host": masked_url
         }
     except Exception as e:
         return {"error": str(e)}
