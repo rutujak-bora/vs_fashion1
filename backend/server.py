@@ -899,6 +899,25 @@ async def get_content(page_id: str):
     return content
 
 
+@api_router.get("/debug/seed")
+async def debug_seed():
+    import subprocess
+    try:
+        result = subprocess.run(
+            ["python3", "seed_policies.py"],
+            capture_output=True,
+            text=True,
+            cwd=ROOT_DIR
+        )
+        return {
+            "stdout": result.stdout,
+            "stderr": result.stderr,
+            "returncode": result.returncode
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+
 @api_router.put("/content/{page_id}")
 async def update_content(page_id: str, content_data: ContentUpdate, current_user: dict = Depends(get_current_admin)):
     existing = await db.content_pages.find_one({"id": page_id}, {"_id": 0})
