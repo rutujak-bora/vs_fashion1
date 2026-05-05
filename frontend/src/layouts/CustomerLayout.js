@@ -104,7 +104,7 @@ export default function CustomerLayout() {
               </Link>
             </nav>
 
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-6 md:gap-4">
               <Link to="/cart" data-testid="nav-cart-icon" className="relative text-gray-700 hover:text-[#8B1B4A] transition-colors">
                 <ShoppingCart size={20} />
                 {cart.length > 0 && (
