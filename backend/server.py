@@ -999,10 +999,20 @@ async def update_profile(
 
 app.include_router(api_router)
 
+# Build CORS origins: always include the production domains + any env-configured extras
+_env_origins = [o.strip() for o in os.environ.get('CORS_ORIGINS', '').split(',') if o.strip()]
+_required_origins = [
+    "https://vs-fashion.com",
+    "https://www.vs-fashion.com",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+]
+_all_origins = list(set(_env_origins + _required_origins)) if _env_origins else ["*"]
+
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
-    allow_origins=os.environ.get('CORS_ORIGINS', '*').split(','),
+    allow_origins=_all_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -1024,11 +1034,18 @@ async def startup_db():
         await db.admins.insert_one(admin_obj.model_dump())
         logger.info(f"Default admin account created: {admin_email}")
     else:
+        updates = {}
         # Self-healing: ensure existing admin has an 'id' field
         if "id" not in admin:
             new_id = str(uuid.uuid4())
-            await db.admins.update_one({"_id": admin["_id"]}, {"$set": {"id": new_id}})
+            updates["id"] = new_id
             logger.info(f"Updated existing admin {admin_email} with missing ID: {new_id}")
+        # Self-healing: ensure existing admin has a 'password_hash' field
+        if not admin.get("password_hash"):
+            updates["password_hash"] = hash_password("vs@54321")
+            logger.info(f"Repaired missing password_hash for admin: {admin_email}")
+        if updates:
+            await db.admins.update_one({"_id": admin["_id"]}, {"$set": updates})
 
 
 @app.on_event("shutdown")
