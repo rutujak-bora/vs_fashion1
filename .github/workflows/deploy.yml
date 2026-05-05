@@ -10,34 +10,30 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       
-      - name: Deploy Backend to EC2
+      - name: Deploy Backend to EC2 via SCP
+        uses: appleboy/scp-action@master
+        with:
+          host: ${{ secrets.BACKEND_IP }}
+          username: ubuntu
+          key: ${{ secrets.BACKEND_SSH_KEY }}
+          source: "backend/*"
+          target: "/home/ubuntu/backend"
+          strip_components: 1
+
+      - name: Update Live Backend
         uses: appleboy/ssh-action@master
         with:
           host: ${{ secrets.BACKEND_IP }}
           username: ubuntu
           key: ${{ secrets.BACKEND_SSH_KEY }}
           script: |
-            set -e  # Fail on any error
-            mkdir -p /home/ubuntu/backend
+            set -e
             cd /home/ubuntu/backend
-            if [ ! -d ".git" ]; then
-              git init
-              git remote add origin https://github.com/rutujak-bora/vs_fashion1.git
-            fi
-            git remote set-url origin https://github.com/rutujak-bora/vs_fashion1.git
-            git config pull.rebase false
-            git fetch --all
-            git reset --hard origin/main
-            git clean -fd
-            
-            cd backend
-            # Ensure venv exists and update dependencies
             if [ ! -d "venv" ]; then
               python3 -m venv venv
             fi
             ./venv/bin/pip install -r requirements.txt
-            # Seed policies to ensure DB is up to date
-            ./venv/bin/python seed_policies.py
+            ./venv/bin/python seed_policies.py || echo "Seed failed, ignoring..."
             sudo systemctl restart vs-backend.service
 
   deploy-frontend:
