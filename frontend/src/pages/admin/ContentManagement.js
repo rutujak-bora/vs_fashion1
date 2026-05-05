@@ -9,12 +9,20 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || '';
 const API = `${BACKEND_URL}/api`;
 
+const POLICIES = [
+  { id: 'privacy', label: 'Privacy Policy' },
+  { id: 'refund', label: 'Refund Policy' },
+  { id: 'shipping', label: 'Shipping Policy' },
+  { id: 'contact', label: 'Contact Details' },
+  { id: 'terms', label: 'Terms & Conditions' },
+  { id: 'faq', label: 'FAQ' }
+];
+
 export default function ContentManagement() {
   const { token } = useStore();
-  const [termsContent, setTermsContent] = useState('');
-  const [faqContent, setFaqContent] = useState('');
+  const [contentData, setContentData] = useState({});
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
+  const [saving, setSaving] = useState({});
 
   useEffect(() => {
     fetchContent();
@@ -22,48 +30,40 @@ export default function ContentManagement() {
 
   const fetchContent = async () => {
     try {
-      const [termsRes, faqRes] = await Promise.all([
-        axios.get(`${API}/content/terms`),
-        axios.get(`${API}/content/faq`)
-      ]);
-      setTermsContent(termsRes.data.content || '');
-      setFaqContent(faqRes.data.content || '');
+      const promises = POLICIES.map(policy => axios.get(`${API}/content/${policy.id}`));
+      const responses = await Promise.all(promises);
+      
+      const newContentData = {};
+      responses.forEach((res, index) => {
+        newContentData[POLICIES[index].id] = res.data.content || '';
+      });
+      
+      setContentData(newContentData);
     } catch (error) {
       console.error('Error fetching content:', error);
+      toast.error('Failed to load some policies.');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleSaveTerms = async () => {
-    setSaving(true);
-    try {
-      await axios.put(
-        `${API}/content/terms`,
-        { content: termsContent },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      toast.success('Terms & Conditions updated successfully');
-    } catch (error) {
-      toast.error('Failed to update Terms & Conditions');
-    } finally {
-      setSaving(false);
-    }
+  const handleContentChange = (id, value) => {
+    setContentData(prev => ({ ...prev, [id]: value }));
   };
 
-  const handleSaveFaq = async () => {
-    setSaving(true);
+  const handleSave = async (id, label) => {
+    setSaving(prev => ({ ...prev, [id]: true }));
     try {
       await axios.put(
-        `${API}/content/faq`,
-        { content: faqContent },
+        `${API}/content/${id}`,
+        { content: contentData[id] },
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      toast.success('FAQ updated successfully');
+      toast.success(`${label} updated successfully`);
     } catch (error) {
-      toast.error('Failed to update FAQ');
+      toast.error(`Failed to update ${label}`);
     } finally {
-      setSaving(false);
+      setSaving(prev => ({ ...prev, [id]: false }));
     }
   };
 
@@ -77,55 +77,43 @@ export default function ContentManagement() {
         Content Management
       </h1>
 
-      <Tabs defaultValue="terms" className="w-full">
-        <TabsList data-testid="content-tabs">
-          <TabsTrigger value="terms" data-testid="terms-tab">Terms & Conditions</TabsTrigger>
-          <TabsTrigger value="faq" data-testid="faq-tab">FAQ</TabsTrigger>
+      <Tabs defaultValue="privacy" className="w-full">
+        <TabsList className="flex flex-wrap gap-2 mb-6 bg-transparent h-auto" data-testid="content-tabs">
+          {POLICIES.map(policy => (
+            <TabsTrigger 
+              key={policy.id} 
+              value={policy.id} 
+              data-testid={`${policy.id}-tab`}
+              className="data-[state=active]:bg-[#C4969C] data-[state=active]:text-white border border-gray-200 px-4 py-2"
+            >
+              {policy.label}
+            </TabsTrigger>
+          ))}
         </TabsList>
 
-        <TabsContent value="terms" className="mt-6">
-          <div className="bg-white border border-gray-200 p-6">
-            <h2 className="text-xl font-bold mb-4">Edit Terms & Conditions</h2>
-            <Textarea
-              data-testid="terms-content-textarea"
-              value={termsContent}
-              onChange={(e) => setTermsContent(e.target.value)}
-              rows={20}
-              className="mb-4 font-mono text-sm"
-              placeholder="Enter Terms & Conditions content here..."
-            />
-            <Button
-              data-testid="save-terms-btn"
-              onClick={handleSaveTerms}
-              disabled={saving}
-              className="bg-[#C4969C] hover:bg-[#B4848F]"
-            >
-              {saving ? 'Saving...' : 'Save Terms & Conditions'}
-            </Button>
-          </div>
-        </TabsContent>
-
-        <TabsContent value="faq" className="mt-6">
-          <div className="bg-white border border-gray-200 p-6">
-            <h2 className="text-xl font-bold mb-4">Edit FAQ</h2>
-            <Textarea
-              data-testid="faq-content-textarea"
-              value={faqContent}
-              onChange={(e) => setFaqContent(e.target.value)}
-              rows={20}
-              className="mb-4 font-mono text-sm"
-              placeholder="Enter FAQ content here..."
-            />
-            <Button
-              data-testid="save-faq-btn"
-              onClick={handleSaveFaq}
-              disabled={saving}
-              className="bg-[#C4969C] hover:bg-[#B4848F]"
-            >
-              {saving ? 'Saving...' : 'Save FAQ'}
-            </Button>
-          </div>
-        </TabsContent>
+        {POLICIES.map(policy => (
+          <TabsContent key={policy.id} value={policy.id}>
+            <div className="bg-white border border-gray-200 p-6 rounded-md shadow-sm">
+              <h2 className="text-xl font-bold mb-4">Edit {policy.label}</h2>
+              <Textarea
+                data-testid={`${policy.id}-content-textarea`}
+                value={contentData[policy.id] || ''}
+                onChange={(e) => handleContentChange(policy.id, e.target.value)}
+                rows={20}
+                className="mb-4 font-mono text-sm border-gray-300 focus:ring-[#C4969C] focus:border-[#C4969C]"
+                placeholder={`Enter ${policy.label} content here...`}
+              />
+              <Button
+                data-testid={`save-${policy.id}-btn`}
+                onClick={() => handleSave(policy.id, policy.label)}
+                disabled={saving[policy.id]}
+                className="bg-[#C4969C] hover:bg-[#B4848F] text-white px-6"
+              >
+                {saving[policy.id] ? 'Saving...' : `Save ${policy.label}`}
+              </Button>
+            </div>
+          </TabsContent>
+        ))}
       </Tabs>
     </div>
   );
