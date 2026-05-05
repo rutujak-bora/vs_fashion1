@@ -17,15 +17,20 @@ jobs:
           username: ubuntu
           key: ${{ secrets.BACKEND_SSH_KEY }}
           script: |
+            set -e  # Fail on any error
+            mkdir -p /home/ubuntu/backend
             cd /home/ubuntu/backend
+            if [ ! -d ".git" ]; then
+              git init
+              git remote add origin https://github.com/rutujak-bora/vs_fashion1.git
+            fi
             git remote set-url origin https://github.com/rutujak-bora/vs_fashion1.git
-            git pull origin main || (git fetch --all && git reset --hard origin/main)
+            git config pull.rebase false
+            git fetch --all
+            git reset --hard origin/main
+            git clean -fd
             
             cd backend
-            # Debug: Check file content
-            echo "--- DEBUG: seed_policies.py content ---"
-            cat seed_policies.py
-            echo "--- END DEBUG ---"
             # Ensure venv exists and update dependencies
             if [ ! -d "venv" ]; then
               python3 -m venv venv
