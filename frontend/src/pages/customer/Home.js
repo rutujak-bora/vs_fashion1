@@ -108,7 +108,7 @@ export default function Home() {
 
   return (
     <div>
-      <section className="relative h-[80vh] overflow-hidden" data-testid="hero-carousel">
+      <section className="relative h-[50vh] md:h-[80vh] overflow-hidden" data-testid="hero-carousel">
         {banners.length > 0 ? (
           <>
             <div className="relative h-full">
@@ -202,7 +202,7 @@ export default function Home() {
         </div>
 
         {trendingProducts.length > 0 ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
+          <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-8">
             {trendingProducts.slice(0, 4).map((product) => (
               <ProductCard key={product.id} product={product} />
             ))}

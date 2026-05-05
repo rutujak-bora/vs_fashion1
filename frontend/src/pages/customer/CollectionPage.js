@@ -49,7 +49,7 @@ export default function CollectionPage() {
       </div>
 
       {products.length > 0 ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8" data-testid="collection-products-grid">
+        <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-8" data-testid="collection-products-grid">
           {products.map((product) => (
             <ProductCard key={product.id} product={product} />
           ))}
