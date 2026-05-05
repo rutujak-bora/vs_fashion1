@@ -34,7 +34,7 @@ By using our website, you consent to our Privacy Policy.
         {
             "id": "refund",
             "content": """
-At vs-fashion.com, we do not offer refunds.
+At vs-fashion.com, we do not offer refunds. (Verified Update)
 
 We only provide product exchange in case of size issues or defective items.
 Customers must request an exchange within 5 days of delivery.
@@ -55,7 +55,7 @@ Cash on Delivery (COD) is not available.
             "id": "shipping",
             "content": """
 Orders are processed and shipped within 4 days after order confirmation.
-Shipping charges are ₹70 for deliveries across Maharashtra.
+Shipping charges are ₹70 for deliveries across Maharashtra. (Verified Update)
 Delivery time may vary depending on location and courier services.
             """,
             "updated_at": datetime.now(timezone.utc).isoformat()
