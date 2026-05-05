@@ -108,7 +108,7 @@ export default function Home() {
 
   return (
     <div>
-      <section className="relative h-[50vh] md:h-[80vh] overflow-hidden" data-testid="hero-carousel">
+      <section className="relative h-[300px] sm:h-[400px] md:h-[500px] lg:h-[600px] overflow-hidden" data-testid="hero-carousel">
         {banners.length > 0 ? (
           <>
             <div className="relative h-full">
