@@ -17,7 +17,7 @@ jobs:
           username: ubuntu
           key: ${{ secrets.BACKEND_SSH_KEY }}
           script: |
-            cd /home/ubuntu/backend
+            cd /home/ubuntu/backend/backend
             git remote set-url origin https://github.com/rutujak-bora/vs_fashion1.git
             git pull origin main || (git fetch --all && git reset --hard origin/main)
             # Ensure venv exists and update dependencies
