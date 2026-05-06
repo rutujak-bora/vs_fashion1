@@ -33,7 +33,25 @@ export default function Checkout() {
   };
 
   const calculateTotal = () => {
-    return cartItems.reduce((sum, item) => sum + (item.product_price * item.quantity), 0);
+    return cartItems.reduce((sum, item) => {
+      const price = Number(item.product_price);
+      if (isNaN(price) || price <= 0) return sum;
+      return sum + (price * item.quantity);
+    }, 0);
+  };
+
+  const calculateShipping = (items, state) => {
+    const isMaharashtra = state?.toLowerCase().includes('maharashtra');
+    if (isMaharashtra) {
+      const totalQuantity = items.reduce((sum, item) => sum + item.quantity, 0);
+      return totalQuantity * 80;
+    } else {
+      const totalWeight = items.reduce((sum, item) => {
+        const weight = Number(item.product_weight) || 0.5;
+        return sum + (weight * item.quantity);
+      }, 0);
+      return totalWeight * 220;
+    }
   };
 
   const handlePlaceOrder = async () => {
@@ -43,21 +61,35 @@ export default function Checkout() {
     }
 
     setPlacing(true);
-    const total = calculateTotal();
+    const productTotal = calculateTotal();
+    const userState = user?.address || '';
+    const shipping = calculateShipping(cartItems, userState);
+    const finalTotal = productTotal + shipping;
+
+    if (isNaN(finalTotal) || finalTotal <= 0) {
+      toast.error('Invalid total amount. Please check your cart.');
+      setPlacing(false);
+      return;
+    }
 
     try {
       // 1. Create Razorpay Order
       const rzpOrderResponse = await axios.post(
         `${API}/payments/create-order`,
-        { amount: total },
-        { headers: { Authorization: `Bearer ${token}` } }
+        { amount: finalTotal, state: userState },
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        }
       );
 
       const rzpOrder = rzpOrderResponse.data;
 
       // 2. Open Razorpay Checkout
       const options = {
-        key: process.env.REACT_APP_RAZORPAY_KEY_ID || 'rzp_test_placeholder', // Should be in .env
+        key: process.env.REACT_APP_RAZORPAY_KEY_ID || 'rzp_test_Sm3FUWDSurPgJt',
         amount: rzpOrder.amount,
         currency: rzpOrder.currency,
         name: "VS Fashion",
@@ -78,7 +110,7 @@ export default function Checkout() {
               `${API}/orders`,
               {
                 items: orderItems,
-                total_amount: total
+                total_amount: finalTotal
               },
               { headers: { Authorization: `Bearer ${token}` } }
             );
@@ -114,12 +146,26 @@ export default function Checkout() {
         }
       };
 
+      if (!window.Razorpay) {
+        toast.error('Razorpay SDK not loaded. Please refresh the page.');
+        return;
+      }
+
       const rzp = new window.Razorpay(options);
       rzp.open();
 
     } catch (error) {
       console.error('Error initiating payment:', error);
-      toast.error(error.response?.data?.detail || 'Failed to initiate payment');
+      const detail = error.response?.data?.detail;
+      let message = 'Failed to initiate payment';
+
+      if (Array.isArray(detail)) {
+        message = detail.map(d => `${d.loc.join('.')}: ${d.msg}`).join(', ');
+      } else if (typeof detail === 'string') {
+        message = detail;
+      }
+
+      toast.error(message);
     } finally {
       setPlacing(false);
     }
@@ -160,9 +206,24 @@ export default function Checkout() {
             <p className="font-bold">₹{(item.product_price * item.quantity).toFixed(2)}</p>
           </div>
         ))}
-        <div className="flex justify-between pt-4 text-lg font-bold">
-          <span>Total Amount</span>
-          <span data-testid="checkout-total">₹{calculateTotal().toFixed(2)}</span>
+        <div className="flex justify-between pt-4 text-sm">
+          <span>Quantity</span>
+          <span>{cartItems.reduce((sum, item) => sum + item.quantity, 0)}</span>
+        </div>
+        <div className="flex justify-between pt-2 text-sm">
+          <span>Product Amount</span>
+          <span>₹{calculateTotal().toFixed(2)}</span>
+        </div>
+        <div className="flex justify-between pt-2 text-sm">
+          <span>Shipping Charges</span>
+          <span>₹{calculateShipping(cartItems, user?.address).toFixed(2)}</span>
+        </div>
+        {!(user?.address?.toLowerCase().includes('maharashtra')) && (
+          <p className="text-xs text-gray-500 mt-1 italic">Note: Shipping outside Maharashtra is calculated at ₹220 per kg</p>
+        )}
+        <div className="flex justify-between pt-4 text-lg font-bold border-t border-gray-200 mt-4">
+          <span>Final Total</span>
+          <span data-testid="checkout-total">₹{(calculateTotal() + calculateShipping(cartItems, user?.address)).toFixed(2)}</span>
         </div>
       </div>
 

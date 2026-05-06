@@ -127,6 +127,7 @@ class Product(BaseModel):
     is_best_seller: bool = False
     images: List[str] = []
     is_active: bool = True
+    weight: float = 0.5
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
@@ -148,6 +149,7 @@ class ProductResponse(BaseModel):
     is_best_seller: bool
     images: List[str]
     is_active: bool
+    weight: float = 0.5
     created_at: datetime
 
 
@@ -221,6 +223,10 @@ class ContentPage(BaseModel):
 
 class ContentUpdate(BaseModel):
     content: str
+
+
+class PaymentCreate(BaseModel):
+    amount: float = Field(..., ge=1)
 
 
 def hash_password(password: str) -> str:
@@ -684,12 +690,14 @@ async def get_cart(current_user: dict = Depends(get_current_user)):
     for item in cart.get("items", []):
         product = await db.products.find_one({"id": item["product_id"]}, {"_id": 0})
         if product:
+            price = product.get("discount_price") or product.get("price", 0)
             items_with_details.append({
                 "product_id": item["product_id"],
                 "quantity": item["quantity"],
                 "size": item["size"],
                 "product_name": product["name"],
-                "product_price": product.get("discount_price") or product["price"],
+                "product_price": float(price),
+                "product_weight": product.get("weight", 0.5),
                 "product_image": product["images"][0] if product.get("images") else ""
             })
     
@@ -786,19 +794,67 @@ async def create_order(order_data: OrderCreate, current_user: dict = Depends(get
     return {"order_id": order.id, "message": "Order placed successfully"}
 
 
+class PaymentCreate(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    state: str = ""
+    amount: Optional[float] = None
+
 @api_router.post("/payments/create-order")
-async def create_razorpay_order(amount: float, current_user: dict = Depends(get_current_user)):
+async def create_razorpay_order(payment_data: PaymentCreate, current_user: dict = Depends(get_current_user)):
+    logger.info(f"Incoming payment request for user {current_user['id']}, state: {payment_data.state}")
     try:
+        cart = await db.carts.find_one({"user_id": current_user["id"]}, {"_id": 0})
+        if not cart or not cart.get("items"):
+            raise HTTPException(status_code=400, detail="Cart is empty")
+        
+        product_total = 0.0
+        total_quantity = 0
+        total_weight = 0.0
+        
+        for item in cart.get("items", []):
+            product = await db.products.find_one({"id": item["product_id"]}, {"_id": 0})
+            if product:
+                price = product.get("discount_price") or product.get("price", 0)
+                qty = item["quantity"]
+                weight = product.get("weight", 0.5)
+                
+                product_total += float(price) * qty
+                total_quantity += qty
+                total_weight += float(weight) * qty
+
+        is_maharashtra = "maharashtra" in payment_data.state.lower()
+        
+        if is_maharashtra:
+            shipping = total_quantity * 80
+        else:
+            shipping = total_weight * 220
+            
+        final_amount = product_total + shipping
+        
+        if final_amount <= 0:
+            raise HTTPException(status_code=400, detail="Invalid total amount")
+
         # Amount in paise (multiply by 100)
         data = {
-            "amount": int(amount * 100),
+            "amount": int(final_amount * 100),
             "currency": "INR",
             "receipt": f"receipt_{uuid.uuid4().hex[:10]}",
             "payment_capture": 1
         }
         order = rzp_client.order.create(data=data)
-        return order
+        
+        return {
+            "order_id": order["id"],
+            "amount": order["amount"],
+            "currency": order["currency"],
+            "productTotal": product_total,
+            "shipping": shipping,
+            "finalAmount": final_amount
+        }
+    except HTTPException:
+        raise
     except Exception as e:
+        logger.error(f"Error creating Razorpay order: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
