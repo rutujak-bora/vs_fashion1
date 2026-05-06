@@ -54,6 +54,19 @@ export default function Checkout() {
     }
   };
 
+  const handleRemove = async (productId, size) => {
+    try {
+      const response = await axios.delete(`${API}/cart/remove/${productId}?size=${size}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setCartItems(response.data.items || []);
+      toast.success('Item removed from cart');
+    } catch (error) {
+      console.error('Error removing item:', error);
+      toast.error('Failed to remove item');
+    }
+  };
+
   const handlePlaceOrder = async () => {
     if (cartItems.length === 0) {
       toast.error('Your cart is empty');
@@ -197,15 +210,30 @@ export default function Checkout() {
         <h2 className="text-2xl mb-4" style={{ fontFamily: 'Playfair Display' }}>
           Order Items
         </h2>
-        {cartItems.map((item, index) => (
-          <div key={`${item.product_id}-${item.size}`} className="flex justify-between py-3 border-b border-gray-200">
-            <div>
-              <p className="font-medium">{item.product_name}</p>
-              <p className="text-sm text-gray-600">Size: {item.size} | Qty: {item.quantity}</p>
+        {cartItems.length > 0 ? (
+          cartItems.map((item, index) => (
+            <div key={`${item.product_id}-${item.size}`} className="flex justify-between py-3 border-b border-gray-200">
+              <div className="flex-1">
+                <p className="font-medium">{item.product_name}</p>
+                <p className="text-sm text-gray-600">Size: {item.size} | Qty: {item.quantity}</p>
+                <button
+                  onClick={() => handleRemove(item.product_id, item.size)}
+                  className="text-xs text-red-500 hover:text-red-700 mt-1 uppercase tracking-tighter"
+                >
+                  Remove
+                </button>
+              </div>
+              <p className="font-bold">₹{(item.product_price * item.quantity).toFixed(2)}</p>
             </div>
-            <p className="font-bold">₹{(item.product_price * item.quantity).toFixed(2)}</p>
+          ))
+        ) : (
+          <div className="py-6 text-center text-gray-500">
+            <p className="mb-4">Your cart is empty</p>
+            <Button onClick={() => navigate('/')} variant="outline" className="text-xs uppercase tracking-widest">
+              Continue Shopping
+            </Button>
           </div>
-        ))}
+        )}
         <div className="flex justify-between pt-4 text-sm">
           <span>Quantity</span>
           <span>{cartItems.reduce((sum, item) => sum + item.quantity, 0)}</span>

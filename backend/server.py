@@ -733,8 +733,8 @@ async def add_to_cart(item: CartItem, current_user: dict = Depends(get_current_u
     return {"message": "Item added to cart"}
 
 
-@api_router.delete("/cart/{product_id}")
-async def remove_from_cart(product_id: str, size: str, current_user: dict = Depends(get_current_user)):
+@api_router.delete("/cart/remove/{product_id}")
+async def remove_item_from_cart(product_id: str, size: str, current_user: dict = Depends(get_current_user)):
     cart = await db.carts.find_one({"user_id": current_user["id"]}, {"_id": 0})
     if cart:
         items = [item for item in cart.get("items", []) if not (item["product_id"] == product_id and item["size"] == size)]
@@ -743,7 +743,31 @@ async def remove_from_cart(product_id: str, size: str, current_user: dict = Depe
             {"$set": {"items": items, "updated_at": datetime.now(timezone.utc).isoformat()}}
         )
     
-    return {"message": "Item removed from cart"}
+    # Return updated cart with details
+    updated_cart = await db.carts.find_one({"user_id": current_user["id"]}, {"_id": 0})
+    if not updated_cart:
+        return {"items": []}
+        
+    items_with_details = []
+    for item in updated_cart.get("items", []):
+        product = await db.products.find_one({"id": item["product_id"]}, {"_id": 0})
+        if product:
+            price = product.get("discount_price") or product.get("price", 0)
+            items_with_details.append({
+                "product_id": item["product_id"],
+                "quantity": item["quantity"],
+                "size": item["size"],
+                "product_name": product["name"],
+                "product_price": float(price),
+                "product_weight": product.get("weight", 0.5),
+                "product_image": product["images"][0] if product.get("images") else ""
+            })
+    return {"items": items_with_details}
+
+
+@api_router.delete("/cart/{product_id}")
+async def remove_from_cart(product_id: str, size: str, current_user: dict = Depends(get_current_user)):
+    return await remove_item_from_cart(product_id, size, current_user)
 
 
 @api_router.post("/orders")
