@@ -41,9 +41,18 @@ export default function Checkout() {
   };
 
   const calculateShipping = (items, state) => {
-    const isMaharashtra = state?.toLowerCase().includes('maharashtra');
+    let isMaharashtra = false;
+    const lowerState = state?.toLowerCase() || '';
+    
+    // Check for Maharashtra pincodes (starts with 40, 41, 42, 43, 44)
+    const pincodeMatch = lowerState.match(/\b(40|41|42|43|44)\d{4}\b/);
+    if (pincodeMatch || lowerState.includes('maharashtra')) {
+      isMaharashtra = true;
+    }
+
     if (isMaharashtra) {
-      return 80; // Fixed shipping for Maharashtra
+      const totalQuantity = items.reduce((sum, item) => sum + item.quantity, 0);
+      return totalQuantity * 80;
     } else {
       const totalWeight = items.reduce((sum, item) => {
         const weight = Number(item.product_weight) || 0.5;
@@ -216,8 +225,8 @@ export default function Checkout() {
         <div className="space-y-2 text-gray-700">
           <p><strong>Name:</strong> {user?.full_name}</p>
           <p><strong>Email:</strong> {user?.email}</p>
-          <p><strong>Mobile:</strong> {user?.mobile}</p>
-          <p><strong>Address:</strong> {user?.address}</p>
+          <p className="break-words"><strong>Mobile:</strong> {user?.mobile}</p>
+          <p className="whitespace-pre-wrap break-words"><strong>Address:</strong> {user?.address}</p>
         </div>
       </div>
 
