@@ -34,7 +34,8 @@ export default function ProductManagement() {
     is_trending: false,
     is_new_arrival: false,
     is_best_seller: false,
-    images: []
+    images: [],
+    size_quantities: {}
   });
 
   useEffect(() => {
@@ -92,10 +93,17 @@ export default function ProductManagement() {
       form.append('name', formData.name);
       form.append('collection_id', formData.collection_id);
       form.append('description', formData.description);
-      form.append('sizes', JSON.stringify(formData.sizes.split(',').map(s => s.trim())));
+      const parsedSizes = formData.sizes.split(',').map(s => s.trim()).filter(Boolean);
+      form.append('sizes', JSON.stringify(parsedSizes));
+      form.append('size_quantities', JSON.stringify(formData.size_quantities || {}));
+      
+      const totalQty = Object.keys(formData.size_quantities || {})
+        .filter(size => parsedSizes.includes(size))
+        .reduce((sum, size) => sum + (formData.size_quantities[size] || 0), 0);
+      
+      form.append('quantity', totalQty > 0 ? totalQty : formData.quantity);
       form.append('color', formData.color);
       form.append('size_guide', formData.size_guide);
-      form.append('quantity', formData.quantity);
       form.append('price', formData.price);
       form.append('discount_price', formData.discount_price || '');
       form.append('is_trending', formData.is_trending);
@@ -139,7 +147,8 @@ export default function ProductManagement() {
       is_trending: product.is_trending,
       is_new_arrival: product.is_new_arrival,
       is_best_seller: product.is_best_seller,
-      images: product.images || []
+      images: product.images || [],
+      size_quantities: product.size_quantities || {}
     });
     setDialogOpen(true);
   };
@@ -172,7 +181,8 @@ export default function ProductManagement() {
       is_trending: false,
       is_new_arrival: false,
       is_best_seller: false,
-      images: []
+      images: [],
+      size_quantities: {}
     });
     setEditingId(null);
   };
@@ -260,6 +270,26 @@ export default function ProductManagement() {
                   />
                 </div>
                 <div>
+                  <Label>Quantities per Size</Label>
+                  <div className="flex gap-2 flex-wrap mt-1">
+                    {formData.sizes.split(',').map(s => s.trim()).filter(Boolean).map(size => (
+                      <div key={size} className="flex flex-col gap-1 items-center w-14">
+                        <span className="text-xs font-semibold">{size}</span>
+                        <Input 
+                          type="number"
+                          className="h-8 px-2 text-center"
+                          value={formData.size_quantities?.[size] || ''}
+                          onChange={e => setFormData({
+                            ...formData, 
+                            size_quantities: { ...formData.size_quantities, [size]: parseInt(e.target.value) || 0 }
+                          })}
+                        />
+                      </div>
+                    ))}
+                    {formData.sizes.trim() === '' && <span className="text-sm text-gray-400 mt-1">Enter sizes first</span>}
+                  </div>
+                </div>
+                <div>
                   <Label htmlFor="color">Color *</Label>
                   <Input
                     id="color"
@@ -285,15 +315,20 @@ export default function ProductManagement() {
 
               <div className="grid grid-cols-3 gap-4">
                 <div>
-                  <Label htmlFor="quantity">Quantity *</Label>
+                  <Label htmlFor="quantity">Total Quantity (Auto)</Label>
                   <Input
                     id="quantity"
                     type="number"
                     data-testid="product-quantity-input"
-                    value={formData.quantity}
+                    value={
+                      Object.keys(formData.size_quantities || {})
+                        .filter(size => formData.sizes.split(',').map(s => s.trim()).filter(Boolean).includes(size))
+                        .reduce((sum, size) => sum + (formData.size_quantities[size] || 0), 0) || formData.quantity
+                    }
                     onChange={(e) => setFormData({ ...formData, quantity: parseInt(e.target.value) || 0 })}
                     required
-                    className="mt-1"
+                    disabled
+                    className="mt-1 bg-gray-50"
                   />
                 </div>
                 <div>

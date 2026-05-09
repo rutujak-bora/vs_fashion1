@@ -29,7 +29,11 @@ export default function ProductDetail() {
       const response = await axios.get(`${API}/products/${productId}`);
       setProduct(response.data);
       if (response.data.sizes && response.data.sizes.length > 0) {
-        setSelectedSize(response.data.sizes[0]);
+        const firstAvailable = response.data.sizes.find(s => {
+          const qty = response.data.size_quantities?.[s] !== undefined ? response.data.size_quantities[s] : response.data.quantity;
+          return qty > 0;
+        }) || response.data.sizes[0];
+        setSelectedSize(firstAvailable);
       }
     } catch (error) {
       console.error('Error fetching product:', error);
@@ -165,21 +169,35 @@ export default function ProductDetail() {
             <div className="mb-6">
               <Label className="text-sm uppercase tracking-widest mb-3 block">Select Size</Label>
               <div className="flex gap-3">
-                {product.sizes.map((size) => (
-                  <button
-                    key={size}
-                    type="button"
-                    data-testid={`size-option-${size}`}
-                    onClick={() => setSelectedSize(size)}
-                    className={`px-6 py-3 border cursor-pointer transition-all ${
-                      selectedSize === size
-                        ? 'border-[#4A2836] bg-[#4A2836] text-white'
-                        : 'border-gray-300 hover:border-[#4A2836]'
-                    }`}
-                  >
-                    {size}
-                  </button>
-                ))}
+                {product.sizes.map((size) => {
+                  const stock = product.size_quantities?.[size] !== undefined ? product.size_quantities[size] : product.quantity;
+                  const isOutOfStock = stock === 0;
+                  return (
+                    <div key={size} className="flex flex-col items-center">
+                      <button
+                        type="button"
+                        data-testid={`size-option-${size}`}
+                        disabled={isOutOfStock}
+                        onClick={() => {
+                          setSelectedSize(size);
+                          setQuantity(1);
+                        }}
+                        className={`px-6 py-3 border transition-all ${
+                          isOutOfStock 
+                            ? 'border-gray-200 text-gray-300 bg-gray-50 cursor-not-allowed line-through relative overflow-hidden' 
+                            : selectedSize === size
+                            ? 'border-[#4A2836] bg-[#4A2836] text-white cursor-pointer'
+                            : 'border-gray-300 hover:border-[#4A2836] cursor-pointer'
+                        }`}
+                      >
+                        {size}
+                      </button>
+                      {selectedSize === size && stock > 0 && stock <= 5 && (
+                        <span className="text-[10px] text-red-500 mt-1 font-semibold absolute mt-12">Only {stock} left!</span>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}
@@ -210,14 +228,17 @@ export default function ProductDetail() {
               <span className="text-lg font-bold w-12 text-center" data-testid="quantity-display">{quantity}</span>
               <Button
                 data-testid="quantity-increase-btn"
-                onClick={() => setQuantity(Math.min(product.quantity, quantity + 1))}
+                onClick={() => {
+                  const maxQty = product.size_quantities?.[selectedSize] !== undefined ? product.size_quantities[selectedSize] : product.quantity;
+                  setQuantity(Math.min(maxQty, quantity + 1));
+                }}
                 variant="outline"
                 size="icon"
               >
                 <Plus size={16} />
               </Button>
               <span className="text-sm text-gray-500 ml-4">
-                ({product.quantity} available)
+                ({product.size_quantities?.[selectedSize] !== undefined ? product.size_quantities[selectedSize] : product.quantity} available)
               </span>
             </div>
           </div>

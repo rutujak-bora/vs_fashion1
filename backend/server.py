@@ -121,6 +121,7 @@ class Product(BaseModel):
     color: str
     size_guide: Optional[str] = ""
     quantity: int
+    size_quantities: dict = Field(default_factory=dict)
     price: float
     discount_price: Optional[float] = None
     is_trending: bool = False
@@ -143,6 +144,7 @@ class ProductResponse(BaseModel):
     color: str
     size_guide: Optional[str] = ""
     quantity: int
+    size_quantities: dict = Field(default_factory=dict)
     price: float
     discount_price: Optional[float] = None
     is_trending: bool
@@ -593,6 +595,7 @@ async def create_product(
     color: str = Form(...),
     size_guide: str = Form(""),
     quantity: int = Form(...),
+    size_quantities: str = Form("{}"),
     price: float = Form(...),
     discount_price: Optional[float] = Form(None),
     is_trending: bool = Form(False),
@@ -613,6 +616,7 @@ async def create_product(
         color=color,
         size_guide=size_guide,
         quantity=quantity,
+        size_quantities=json.loads(size_quantities) if isinstance(size_quantities, str) else size_quantities,
         price=price,
         discount_price=discount_price,
         is_trending=is_trending,
@@ -638,6 +642,7 @@ async def update_product(
     color: str = Form(...),
     size_guide: str = Form(""),
     quantity: int = Form(...),
+    size_quantities: str = Form("{}"),
     price: float = Form(...),
     discount_price: Optional[float] = Form(None),
     is_trending: bool = Form(False),
@@ -656,6 +661,7 @@ async def update_product(
         "collection_id": collection_id,
         "description": description,
         "sizes": sizes_list,
+        "size_quantities": json.loads(size_quantities) if isinstance(size_quantities, str) else size_quantities,
         "color": color,
         "size_guide": size_guide,
         "quantity": quantity,
@@ -789,12 +795,26 @@ async def create_order(order_data: OrderCreate, current_user: dict = Depends(get
     
     for item in order_data.items:
         product = await db.products.find_one({"id": item.product_id}, {"_id": 0})
-        if product and product["quantity"] >= item.quantity:
-            new_quantity = product["quantity"] - item.quantity
-            await db.products.update_one(
-                {"id": item.product_id},
-                {"$set": {"quantity": new_quantity}}
-            )
+        if product:
+            # Deduct from specific size if available
+            size_quantities = product.get("size_quantities", {})
+            if item.size in size_quantities and size_quantities[item.size] >= item.quantity:
+                size_quantities[item.size] -= item.quantity
+                
+                # Update total quantity
+                new_total = sum(size_quantities.values()) if size_quantities else max(0, product["quantity"] - item.quantity)
+                
+                await db.products.update_one(
+                    {"id": item.product_id},
+                    {"$set": {"quantity": new_total, "size_quantities": size_quantities}}
+                )
+            # Fallback to global quantity if size_quantities not configured properly
+            elif product["quantity"] >= item.quantity:
+                new_quantity = product["quantity"] - item.quantity
+                await db.products.update_one(
+                    {"id": item.product_id},
+                    {"$set": {"quantity": new_quantity}}
+                )
     
     doc = order.model_dump()
     doc['created_at'] = doc['created_at'].isoformat()
