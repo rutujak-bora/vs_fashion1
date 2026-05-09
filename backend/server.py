@@ -50,8 +50,8 @@ app.mount("/uploads", StaticFiles(directory=str(UPLOAD_DIR)), name="uploads")
 
 # Razorpay Client
 load_dotenv()
-KEY_ID = os.getenv("RAZORPAY_KEY_ID")
-KEY_SECRET = os.getenv("RAZORPAY_KEY_SECRET")
+KEY_ID = os.getenv("RAZORPAY_KEY_ID", "rzp_test_Sm3FUWDSurPgJt")
+KEY_SECRET = os.getenv("RAZORPAY_KEY_SECRET", "cbizgrI7XmH2a2rgFXWC92ux")
 rzp_client = razorpay.Client(auth=(KEY_ID, KEY_SECRET))
 
 # WhatsApp Config (Business Number)
