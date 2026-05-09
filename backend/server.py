@@ -49,9 +49,10 @@ UPLOAD_DIR.mkdir(exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=str(UPLOAD_DIR)), name="uploads")
 
 # Razorpay Client
-RAZORPAY_KEY_ID = os.environ.get("RAZORPAY_KEY_ID", "rzp_test_placeholder")
-RAZORPAY_KEY_SECRET = os.environ.get("RAZORPAY_KEY_SECRET", "placeholder_secret")
-rzp_client = razorpay.Client(auth=(RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET))
+load_dotenv()
+KEY_ID = os.getenv("RAZORPAY_KEY_ID")
+KEY_SECRET = os.getenv("RAZORPAY_KEY_SECRET")
+rzp_client = razorpay.Client(auth=(KEY_ID, KEY_SECRET))
 
 # WhatsApp Config (Business Number)
 BUSINESS_WHATSAPP = "+918421968737"
@@ -826,35 +827,42 @@ class PaymentCreate(BaseModel):
 @api_router.post("/payments/create-order")
 async def create_razorpay_order(payment_data: PaymentCreate, current_user: dict = Depends(get_current_user)):
     logger.info(f"Incoming payment request for user {current_user['id']}, state: {payment_data.state}")
+    logger.info(f"Received amount: {payment_data.amount}")
+    
     try:
-        cart = await db.carts.find_one({"user_id": current_user["id"]}, {"_id": 0})
-        if not cart or not cart.get("items"):
-            raise HTTPException(status_code=400, detail="Cart is empty")
-        
-        product_total = 0.0
-        total_quantity = 0
-        total_weight = 0.0
-        
-        for item in cart.get("items", []):
-            product = await db.products.find_one({"id": item["product_id"]}, {"_id": 0})
-            if product:
-                price = product.get("discount_price") or product.get("price", 0)
-                qty = item["quantity"]
-                weight = product.get("weight", 0.5)
-                
-                product_total += float(price) * qty
-                total_quantity += qty
-                total_weight += float(weight) * qty
-
-        is_maharashtra = "maharashtra" in payment_data.state.lower()
-        
-        if is_maharashtra:
-            shipping = total_quantity * 80
+        if payment_data.amount is not None:
+            final_amount = payment_data.amount
+            product_total = final_amount
+            shipping = 0
         else:
-            shipping = total_weight * 220
+            cart = await db.carts.find_one({"user_id": current_user["id"]}, {"_id": 0})
+            if not cart or not cart.get("items"):
+                raise HTTPException(status_code=400, detail="Cart is empty")
             
-        final_amount = product_total + shipping
-        
+            product_total = 0.0
+            total_quantity = 0
+            total_weight = 0.0
+            
+            for item in cart.get("items", []):
+                product = await db.products.find_one({"id": item["product_id"]}, {"_id": 0})
+                if product:
+                    price = product.get("discount_price") or product.get("price", 0)
+                    qty = item["quantity"]
+                    weight = product.get("weight", 0.5)
+                    
+                    product_total += float(price) * qty
+                    total_quantity += qty
+                    total_weight += float(weight) * qty
+
+            is_maharashtra = "maharashtra" in payment_data.state.lower()
+            
+            if is_maharashtra:
+                shipping = 80
+            else:
+                shipping = total_weight * 220
+                
+            final_amount = product_total + shipping
+            
         if final_amount <= 0:
             raise HTTPException(status_code=400, detail="Invalid total amount")
 
@@ -865,6 +873,7 @@ async def create_razorpay_order(payment_data: PaymentCreate, current_user: dict 
             "receipt": f"receipt_{uuid.uuid4().hex[:10]}",
             "payment_capture": 1
         }
+        logger.info(f"Sending Razorpay payload: {data}")
         order = rzp_client.order.create(data=data)
         
         return {
@@ -878,7 +887,7 @@ async def create_razorpay_order(payment_data: PaymentCreate, current_user: dict 
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error creating Razorpay order: {str(e)}")
+        logger.error(f"Razorpay Error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

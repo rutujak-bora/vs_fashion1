@@ -43,8 +43,7 @@ export default function Checkout() {
   const calculateShipping = (items, state) => {
     const isMaharashtra = state?.toLowerCase().includes('maharashtra');
     if (isMaharashtra) {
-      const totalQuantity = items.reduce((sum, item) => sum + item.quantity, 0);
-      return totalQuantity * 80;
+      return 80; // Fixed shipping for Maharashtra
     } else {
       const totalWeight = items.reduce((sum, item) => {
         const weight = Number(item.product_weight) || 0.5;
@@ -156,15 +155,29 @@ export default function Checkout() {
         },
         theme: {
           color: "#8B1B4A"
+        },
+        modal: {
+          ondismiss: function() {
+            setPlacing(false);
+            toast.error('Payment cancelled by user');
+          }
         }
       };
 
       if (!window.Razorpay) {
         toast.error('Razorpay SDK not loaded. Please refresh the page.');
+        setPlacing(false);
         return;
       }
 
       const rzp = new window.Razorpay(options);
+      
+      rzp.on('payment.failed', function (response) {
+        console.error('Payment failed:', response.error);
+        toast.error(response.error.description || 'Payment failed');
+        setPlacing(false);
+      });
+
       rzp.open();
 
     } catch (error) {
@@ -179,9 +192,11 @@ export default function Checkout() {
       }
 
       toast.error(message);
-    } finally {
       setPlacing(false);
     }
+    // Note: Do not setPlacing(false) in a finally block here, as rzp.open() is asynchronous 
+    // and we want the button to remain disabled while the modal is open.
+
   };
 
   if (loading) {
