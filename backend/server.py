@@ -390,7 +390,7 @@ async def register(user_data: UserRegister):
     await db.users.insert_one(doc)
     
     token = create_token({"sub": user.id, "type": "user"})
-    return {"token": token, "user": {"id": user.id, "email": user.email, "full_name": user.full_name}}
+    return {"token": token, "user": {"id": user.id, "email": user.email, "full_name": user.full_name, "mobile": user.mobile, "address": user.address}}
 
 
 @api_router.post("/auth/login")
@@ -407,7 +407,7 @@ async def login(user_data: UserLogin):
             user_id = str(uuid.uuid4())
             
         token = create_token({"sub": user_id, "type": "user"})
-        return {"token": token, "user": {"id": user_id, "email": user["email"], "full_name": user["full_name"]}}
+        return {"token": token, "user": {"id": user_id, "email": user["email"], "full_name": user["full_name"], "mobile": user.get("mobile", ""), "address": user.get("address", "")}}
     except HTTPException:
         raise
     except Exception as e:

@@ -30,6 +30,17 @@ export default function ProductCard({ product }) {
               Sale
             </div>
           )}
+          {product.quantity === 0 ? (
+            <div className="absolute inset-0 bg-white/60 flex items-center justify-center">
+              <span className="bg-red-500 text-white px-3 py-1 text-xs uppercase tracking-widest font-bold">
+                Out of Stock
+              </span>
+            </div>
+          ) : product.quantity < 5 ? (
+            <div className="absolute top-4 left-4 bg-yellow-500 text-white px-3 py-1 text-xs uppercase tracking-widest">
+              Low Stock
+            </div>
+          ) : null}
           <div className="absolute top-2 left-2 text-[#C4969C] text-xl opacity-50">❋</div>
           <div className="absolute bottom-2 right-2 text-[#C4969C] text-xl opacity-50">❋</div>
         </div>

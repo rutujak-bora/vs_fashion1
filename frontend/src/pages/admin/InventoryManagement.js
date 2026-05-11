@@ -79,13 +79,28 @@ export default function InventoryManagement() {
                     <td className="px-6 py-4 whitespace-nowrap">{product.name}</td>
                     <td className="px-6 py-4 whitespace-nowrap">{product.collection_name}</td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <span className={`font-bold ${
-                        product.quantity === 0 ? 'text-red-600' :
-                        product.quantity < 10 ? 'text-yellow-600' :
-                        'text-green-600'
-                      }`}>
-                        {product.quantity}
-                      </span>
+                      <div className="flex flex-col">
+                        <span className={`font-bold ${
+                          product.quantity === 0 ? 'text-red-600' :
+                          product.quantity < 10 ? 'text-yellow-600' :
+                          'text-green-600'
+                        }`}>
+                          {product.quantity}
+                        </span>
+                        {product.size_quantities && Object.keys(product.size_quantities).length > 0 && (
+                          <div className="text-[10px] text-gray-400 mt-1 flex flex-wrap gap-x-2">
+                            {Object.entries(product.size_quantities).map(([size, qty]) => (
+                              <span key={size} className={
+                                qty === 0 ? 'text-red-500 font-bold' : 
+                                qty < 5 ? 'text-yellow-600 font-semibold' : 
+                                ''
+                              }>
+                                {size}: {qty}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span className={`px-2 py-1 text-xs rounded ${
