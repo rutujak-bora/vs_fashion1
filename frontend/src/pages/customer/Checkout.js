@@ -12,21 +12,30 @@ export default function Checkout() {
   const navigate = useNavigate();
   const { token, user, clearCart } = useStore();
   const [cartItems, setCartItems] = useState([]);
+  const [addresses, setAddresses] = useState([]);
+  const [selectedAddress, setSelectedAddress] = useState(null);
   const [loading, setLoading] = useState(true);
   const [placing, setPlacing] = useState(false);
 
   useEffect(() => {
-    fetchCart();
+    fetchData();
   }, []);
 
-  const fetchCart = async () => {
+  const fetchData = async () => {
     try {
-      const response = await axios.get(`${API}/cart`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      setCartItems(response.data.items || []);
+      const [cartRes, addrRes] = await Promise.all([
+        axios.get(`${API}/cart`, { headers: { Authorization: `Bearer ${token}` } }),
+        axios.get(`${API}/user/addresses`, { headers: { Authorization: `Bearer ${token}` } })
+      ]);
+      setCartItems(cartRes.data.items || []);
+      const addrList = addrRes.data || [];
+      setAddresses(addrList);
+      
+      // Set default address as selected
+      const defaultAddr = addrList.find(a => a.is_default) || addrList[0];
+      setSelectedAddress(defaultAddr);
     } catch (error) {
-      console.error('Error fetching cart:', error);
+      console.error('Error fetching checkout data:', error);
     } finally {
       setLoading(false);
     }
@@ -40,13 +49,17 @@ export default function Checkout() {
     }, 0);
   };
 
-  const calculateShipping = (items, state) => {
-    let isMaharashtra = false;
-    const lowerState = state?.toLowerCase() || '';
+  const calculateShipping = (items, address) => {
+    if (!address) return 0;
     
-    // Check for Maharashtra pincodes (starts with 40, 41, 42, 43, 44)
-    const pincodeMatch = lowerState.match(/\b(40|41|42|43|44)\d{4}\b/);
-    if (pincodeMatch || lowerState.includes('maharashtra')) {
+    let isMaharashtra = false;
+    const lowerState = address.state?.toLowerCase() || '';
+    const lowerAddrLine = address.address_line?.toLowerCase() || '';
+    const pincode = address.pincode || '';
+    
+    // Check for Maharashtra pincodes or state name
+    if (pincode.startsWith('40') || pincode.startsWith('41') || pincode.startsWith('42') || pincode.startsWith('43') || pincode.startsWith('44') || 
+        lowerState.includes('maharashtra') || lowerAddrLine.includes('maharashtra')) {
       isMaharashtra = true;
     }
 
@@ -81,11 +94,16 @@ export default function Checkout() {
       return;
     }
 
+    if (!selectedAddress) {
+      toast.error('Please select a delivery address');
+      return;
+    }
+
     setPlacing(true);
     const productTotal = calculateTotal();
-    const userState = user?.address || '';
-    const shipping = calculateShipping(cartItems, userState);
+    const shipping = calculateShipping(cartItems, selectedAddress);
     const finalTotal = productTotal + shipping;
+    const fullAddressString = `${selectedAddress.full_name}\n${selectedAddress.address_line}, ${selectedAddress.city}, ${selectedAddress.state} - ${selectedAddress.pincode}\nMobile: ${selectedAddress.mobile}`;
 
     if (isNaN(finalTotal) || finalTotal <= 0) {
       toast.error('Invalid total amount. Please check your cart.');
@@ -97,7 +115,7 @@ export default function Checkout() {
       // 1. Create Razorpay Order
       const rzpOrderResponse = await axios.post(
         `${API}/payments/create-order`,
-        { amount: finalTotal, state: userState },
+        { amount: finalTotal, state: selectedAddress.state },
         {
           headers: {
             Authorization: `Bearer ${token}`,
@@ -131,7 +149,8 @@ export default function Checkout() {
               `${API}/orders`,
               {
                 items: orderItems,
-                total_amount: finalTotal
+                total_amount: finalTotal,
+                delivery_address: fullAddressString
               },
               { headers: { Authorization: `Bearer ${token}` } }
             );
@@ -158,9 +177,9 @@ export default function Checkout() {
           }
         },
         prefill: {
-          name: user?.full_name,
+          name: selectedAddress.full_name,
           email: user?.email,
-          contact: user?.mobile
+          contact: selectedAddress.mobile
         },
         theme: {
           color: "#8B1B4A"
@@ -203,9 +222,6 @@ export default function Checkout() {
       toast.error(message);
       setPlacing(false);
     }
-    // Note: Do not setPlacing(false) in a finally block here, as rzp.open() is asynchronous 
-    // and we want the button to remain disabled while the modal is open.
-
   };
 
   if (loading) {
@@ -219,15 +235,57 @@ export default function Checkout() {
       </h1>
 
       <div className="bg-white border border-gray-200 p-6 mb-8">
-        <h2 className="text-2xl mb-4" style={{ fontFamily: 'Playfair Display' }}>
-          Delivery Information
-        </h2>
-        <div className="space-y-2 text-gray-700">
-          <p><strong>Name:</strong> {user?.full_name}</p>
-          <p><strong>Email:</strong> {user?.email}</p>
-          <p className="break-words"><strong>Mobile:</strong> {user?.mobile}</p>
-          <p className="whitespace-pre-wrap break-words"><strong>Address:</strong> {user?.address}</p>
+        <div className="flex justify-between items-center mb-6">
+          <h2 className="text-2xl" style={{ fontFamily: 'Playfair Display' }}>
+            Select Delivery Address
+          </h2>
+          <Button 
+            variant="outline" 
+            onClick={() => navigate('/dashboard')}
+            className="text-xs uppercase tracking-widest"
+          >
+            Manage Addresses
+          </Button>
         </div>
+
+        {addresses.length > 0 ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+            {addresses.map(addr => (
+              <div 
+                key={addr.id}
+                onClick={() => setSelectedAddress(addr)}
+                className={`cursor-pointer border p-4 transition-all ${
+                  selectedAddress?.id === addr.id 
+                    ? 'border-[#C4969C] bg-[#C4969C]/5 ring-1 ring-[#C4969C]' 
+                    : 'border-gray-200 hover:border-gray-300'
+                }`}
+              >
+                <div className="flex justify-between items-start mb-2">
+                  <span className="text-[10px] font-bold uppercase tracking-widest bg-gray-100 px-2 py-0.5 rounded">
+                    {addr.label}
+                  </span>
+                  {selectedAddress?.id === addr.id && (
+                    <div className="w-4 h-4 bg-[#C4969C] rounded-full flex items-center justify-center">
+                      <div className="w-1.5 h-1.5 bg-white rounded-full" />
+                    </div>
+                  )}
+                </div>
+                <p className="font-bold text-sm">{addr.full_name}</p>
+                <p className="text-xs text-gray-600 mb-2">{addr.mobile}</p>
+                <p className="text-xs text-gray-700 line-clamp-2">
+                  {addr.address_line}, {addr.city}, {addr.state} - {addr.pincode}
+                </p>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="text-center py-8 border border-dashed border-gray-300 rounded mb-6">
+            <p className="text-gray-500 mb-4">No addresses saved yet</p>
+            <Button onClick={() => navigate('/dashboard')} className="bg-[#1A1A1A]">
+              Add Address in Dashboard
+            </Button>
+          </div>
+        )}
       </div>
 
       <div className="bg-white border border-gray-200 p-6 mb-8">
@@ -268,14 +326,14 @@ export default function Checkout() {
         </div>
         <div className="flex justify-between pt-2 text-sm">
           <span>Shipping Charges</span>
-          <span>₹{calculateShipping(cartItems, user?.address).toFixed(2)}</span>
+          <span>₹{calculateShipping(cartItems, selectedAddress).toFixed(2)}</span>
         </div>
-        {!(user?.address?.toLowerCase().includes('maharashtra')) && (
+        {selectedAddress && !(selectedAddress.state?.toLowerCase().includes('maharashtra')) && (
           <p className="text-xs text-gray-500 mt-1 italic">Note: Shipping outside Maharashtra is calculated at ₹220 per kg</p>
         )}
         <div className="flex justify-between pt-4 text-lg font-bold border-t border-gray-200 mt-4">
           <span>Final Total</span>
-          <span data-testid="checkout-total">₹{(calculateTotal() + calculateShipping(cartItems, user?.address)).toFixed(2)}</span>
+          <span data-testid="checkout-total">₹{(calculateTotal() + calculateShipping(cartItems, selectedAddress)).toFixed(2)}</span>
         </div>
       </div>
 

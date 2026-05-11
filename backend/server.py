@@ -59,13 +59,37 @@ BUSINESS_WHATSAPP = "+918421968737"
 WHATSAPP_API_KEY = os.environ.get("WHATSAPP_API_KEY", "")
 
 
+class Address(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    label: str = "Home"  # Home, Office, etc.
+    full_name: str
+    mobile: str
+    address_line: str
+    city: str
+    state: str
+    pincode: str
+    is_default: bool = False
+
+
+class AddressCreate(BaseModel):
+    label: str = "Home"
+    full_name: str
+    mobile: str
+    address_line: str
+    city: str
+    state: str
+    pincode: str
+    is_default: bool = False
+
+
 class User(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     full_name: str
     email: EmailStr
     mobile: str
-    address: str
+    address: str = ""  # Legacy support
+    addresses: List[Address] = []
     password_hash: str
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -197,6 +221,7 @@ class Order(BaseModel):
 class OrderCreate(BaseModel):
     items: List[OrderItem]
     total_amount: float
+    delivery_address: Optional[str] = None
 
 
 class Banner(BaseModel):
@@ -377,20 +402,42 @@ async def register(user_data: UserRegister):
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
     
+    # Create initial address entry
+    initial_address = Address(
+        label="Home",
+        full_name=user_data.full_name,
+        mobile=user_data.mobile,
+        address_line=user_data.address,
+        city="", # Would be better if we split this in frontend later
+        state="", # Would be better if we split this in frontend later
+        pincode="",
+        is_default=True
+    )
+    
     user = User(
         full_name=user_data.full_name,
         email=user_data.email,
         mobile=user_data.mobile,
         address=user_data.address,
+        addresses=[initial_address],
         password_hash=hash_password(user_data.password)
     )
     
     doc = user.model_dump()
     doc['created_at'] = doc['created_at'].isoformat()
+    # Convert sub-models in list to dict
+    doc['addresses'] = [addr.model_dump() for addr in user.addresses]
     await db.users.insert_one(doc)
     
     token = create_token({"sub": user.id, "type": "user"})
-    return {"token": token, "user": {"id": user.id, "email": user.email, "full_name": user.full_name, "mobile": user.mobile, "address": user.address}}
+    return {"token": token, "user": {
+        "id": user.id, 
+        "email": user.email, 
+        "full_name": user.full_name, 
+        "mobile": user.mobile, 
+        "address": user.address,
+        "addresses": doc['addresses']
+    }}
 
 
 @api_router.post("/auth/login")
@@ -407,12 +454,100 @@ async def login(user_data: UserLogin):
             user_id = str(uuid.uuid4())
             
         token = create_token({"sub": user_id, "type": "user"})
-        return {"token": token, "user": {"id": user_id, "email": user["email"], "full_name": user["full_name"], "mobile": user.get("mobile", ""), "address": user.get("address", "")}}
+        return {"token": token, "user": {
+            "id": user_id, 
+            "email": user["email"], 
+            "full_name": user["full_name"], 
+            "mobile": user.get("mobile", ""), 
+            "address": user.get("address", ""),
+            "addresses": user.get("addresses", [])
+        }}
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Unexpected error in user login: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Internal Server Error: {str(e)}")
+
+
+@api_router.get("/user/addresses", response_model=List[Address])
+async def get_addresses(current_user: dict = Depends(get_current_user)):
+    user = await db.users.find_one({"id": current_user["id"]}, {"_id": 0, "addresses": 1})
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return user.get("addresses", [])
+
+
+@api_router.post("/user/addresses", response_model=Address)
+async def add_address(addr_data: AddressCreate, current_user: dict = Depends(get_current_user)):
+    user = await db.users.find_one({"id": current_user["id"]})
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    new_address = Address(**addr_data.model_dump())
+    
+    addresses = user.get("addresses", [])
+    
+    # If this is the first address or set as default, unset others
+    if not addresses or new_address.is_default:
+        for addr in addresses:
+            addr["is_default"] = False
+        new_address.is_default = True
+        
+    addresses.append(new_address.model_dump())
+    
+    await db.users.update_one(
+        {"id": current_user["id"]},
+        {"$set": {"addresses": addresses}}
+    )
+    return new_address
+
+
+@api_router.delete("/user/addresses/{address_id}")
+async def delete_address(address_id: str, current_user: dict = Depends(get_current_user)):
+    user = await db.users.find_one({"id": current_user["id"]})
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    addresses = user.get("addresses", [])
+    new_addresses = [addr for addr in addresses if addr["id"] != address_id]
+    
+    if len(new_addresses) == len(addresses):
+        raise HTTPException(status_code=404, detail="Address not found")
+        
+    # If we deleted the default address, set another one as default
+    if any(addr["id"] == address_id and addr.get("is_default") for addr in addresses) and new_addresses:
+        new_addresses[0]["is_default"] = True
+        
+    await db.users.update_one(
+        {"id": current_user["id"]},
+        {"$set": {"addresses": new_addresses}}
+    )
+    return {"message": "Address deleted"}
+
+
+@api_router.patch("/user/addresses/{address_id}/default")
+async def set_default_address(address_id: str, current_user: dict = Depends(get_current_user)):
+    user = await db.users.find_one({"id": current_user["id"]})
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    addresses = user.get("addresses", [])
+    found = False
+    for addr in addresses:
+        if addr["id"] == address_id:
+            addr["is_default"] = True
+            found = True
+        else:
+            addr["is_default"] = False
+            
+    if not found:
+        raise HTTPException(status_code=404, detail="Address not found")
+        
+    await db.users.update_one(
+        {"id": current_user["id"]},
+        {"$set": {"addresses": addresses}}
+    )
+    return {"message": "Default address updated"}
 
 
 @api_router.get("/health")
@@ -788,7 +923,7 @@ async def create_order(order_data: OrderCreate, current_user: dict = Depends(get
         customer_name=user["full_name"],
         customer_email=user["email"],
         customer_mobile=user["mobile"],
-        delivery_address=user["address"],
+        delivery_address=order_data.delivery_address or user["address"],
         items=order_data.items,
         total_amount=order_data.total_amount
     )
