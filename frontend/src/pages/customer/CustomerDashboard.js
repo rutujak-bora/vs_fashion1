@@ -389,7 +389,6 @@ export default function CustomerDashboard() {
                     <Label>Mobile</Label>
                     <p className="text-gray-700 mt-1">{profile?.mobile}</p>
                   </div>
-                  </div>
                 </div>
                 <Button
                   data-testid="edit-profile-btn"
@@ -427,7 +426,6 @@ export default function CustomerDashboard() {
                       required
                       className="mt-1"
                     />
-                  </div>
                   </div>
                 </div>
                 <div className="flex gap-3">
