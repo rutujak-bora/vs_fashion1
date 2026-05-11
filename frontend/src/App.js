@@ -5,6 +5,7 @@ import useStore from '@/store/useStore';
 
 import CustomerLayout from '@/layouts/CustomerLayout';
 import AdminLayout from '@/layouts/AdminLayout';
+import ScrollToTop from '@/components/ScrollToTop';
 
 import Home from '@/pages/customer/Home';
 import NewArrivals from '@/pages/customer/NewArrivals';
@@ -51,6 +52,7 @@ function App() {
   return (
     <div className="App" style={{ backgroundColor: '#FAFAFA', minHeight: '100vh' }}>
       <BrowserRouter>
+        <ScrollToTop />
         <Routes>
           <Route path="/" element={<CustomerLayout />}>
             <Route index element={<Home />} />
