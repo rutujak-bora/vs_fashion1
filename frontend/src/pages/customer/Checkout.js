@@ -57,10 +57,20 @@ export default function Checkout() {
     const lowerAddrLine = address.address_line?.toLowerCase() || '';
     const pincode = address.pincode || '';
     
-    // Check for Maharashtra pincodes or state name
-    if (pincode.startsWith('40') || pincode.startsWith('41') || pincode.startsWith('42') || pincode.startsWith('43') || pincode.startsWith('44') || 
+    const pincodeStr = String(pincode).trim();
+    
+    // Check for Maharashtra pincodes (40-44) or state name
+    if (pincodeStr.startsWith('40') || pincodeStr.startsWith('41') || pincodeStr.startsWith('42') || pincodeStr.startsWith('43') || pincodeStr.startsWith('44') || 
         lowerState.includes('maharashtra') || lowerAddrLine.includes('maharashtra')) {
       isMaharashtra = true;
+    }
+
+    // Additional fallback: check if any field contains a Maharashtra pincode pattern
+    if (!isMaharashtra) {
+      const fullAddr = `${lowerState} ${lowerAddrLine} ${pincodeStr}`;
+      if (/\b(40|41|42|43|44)\d{4}\b/.test(fullAddr)) {
+        isMaharashtra = true;
+      }
     }
 
     if (isMaharashtra) {
@@ -115,7 +125,7 @@ export default function Checkout() {
       // 1. Create Razorpay Order
       const rzpOrderResponse = await axios.post(
         `${API}/payments/create-order`,
-        { amount: finalTotal, state: selectedAddress.state },
+        { amount: finalTotal, state: selectedAddress.state, pincode: selectedAddress.pincode },
         {
           headers: {
             Authorization: `Bearer ${token}`,

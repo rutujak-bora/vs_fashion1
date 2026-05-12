@@ -977,6 +977,7 @@ async def create_order(order_data: OrderCreate, current_user: dict = Depends(get
 class PaymentCreate(BaseModel):
     model_config = ConfigDict(extra="ignore")
     state: str = ""
+    pincode: str = ""
     amount: Optional[float] = None
 
 @api_router.post("/payments/create-order")
@@ -1010,8 +1011,10 @@ async def create_razorpay_order(payment_data: PaymentCreate, current_user: dict 
                     total_weight += float(weight) * qty
 
             state_lower = payment_data.state.lower()
+            pincode_str = str(payment_data.pincode).strip()
+            
             import re
-            pincode_match = re.search(r'\b(40|41|42|43|44)\d{4}\b', state_lower)
+            pincode_match = re.search(r'\b(40|41|42|43|44)\d{4}\b', state_lower) or re.search(r'^(40|41|42|43|44)', pincode_str)
             is_maharashtra = bool(pincode_match) or "maharashtra" in state_lower
             
             if is_maharashtra:
