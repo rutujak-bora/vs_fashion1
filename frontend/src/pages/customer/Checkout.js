@@ -133,7 +133,7 @@ export default function Checkout() {
         currency: rzpOrder.currency,
         name: "VS Fashion",
         description: "Purchase from VS Fashion",
-        order_id: rzpOrder.id,
+        order_id: rzpOrder.order_id,
         handler: async function (response) {
           try {
             // 3. Create order in our database
