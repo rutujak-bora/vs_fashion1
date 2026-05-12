@@ -140,9 +140,7 @@ export default function CustomerLayout() {
                 </div>
               )}
 
-              <Link to="/admin/login" data-testid="nav-admin-login" className="hidden text-xs px-4 py-2 border border-[#8B1B4A] hover:bg-[#8B1B4A] hover:text-white transition-all uppercase tracking-widest">
-                Admin
-              </Link>
+
             </div>
           </div>
 
@@ -173,9 +171,7 @@ export default function CustomerLayout() {
               <Link to="/about" className="text-xs uppercase tracking-widest text-gray-700 hover:text-[#8B1B4A]" onClick={() => setMobileMenuOpen(false)}>
                 About Us
               </Link>
-              <Link to="/admin/login" className="text-xs uppercase tracking-widest text-gray-700 hover:text-[#8B1B4A]" onClick={() => setMobileMenuOpen(false)}>
-                Admin Login
-              </Link>
+
             </nav>
           )}
         </div>
@@ -230,16 +226,7 @@ export default function CustomerLayout() {
         </div>
 
         {/* Subtle Admin Link */}
-        <div className="max-w-7xl mx-auto px-6 md:px-12 mt-8 pt-8 border-t border-white/20 text-center">
-          <Link
-            to="/admin/login"
-            data-testid="footer-admin-link"
-            className="text-xs text-white/30 hover:text-white/60 transition-colors"
-            style={{ letterSpacing: '0.1em' }}
-          >
-            · Admin ·
-          </Link>
-        </div>
+
       </footer>
 
       {/* Floating WhatsApp Widget */}
