@@ -38,7 +38,9 @@ jobs:
           script: |
             set -e
             cd /home/ubuntu/backend
-            if [ ! -d "venv" ]; then
+            # If venv is missing or broken (e.g. wrong Python version / missing ensurepip), recreate it
+            if [ ! -d "venv" ] || ! ./venv/bin/python3 --version > /dev/null 2>&1; then
+              rm -rf venv
               python3 -m venv venv
             fi
             ./venv/bin/pip install -r requirements.txt
