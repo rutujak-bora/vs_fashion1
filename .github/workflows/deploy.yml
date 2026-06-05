@@ -38,6 +38,8 @@ jobs:
           script: |
             set -e
             cd /home/ubuntu/backend
+            # Ensure system-level python3-venv and pip are available
+            sudo apt-get install -y python3-venv python3-pip
             # If venv is missing or broken (e.g. wrong Python version / missing ensurepip), recreate it
             if [ ! -d "venv" ] || ! ./venv/bin/python3 --version > /dev/null 2>&1; then
               rm -rf venv
