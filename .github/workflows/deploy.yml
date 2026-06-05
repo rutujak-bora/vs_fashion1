@@ -20,6 +20,17 @@ jobs:
           target: "/home/ubuntu/backend"
           strip_components: 1
 
+      - name: Write Backend .env File
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.FRONTEND_IP }}
+          username: ubuntu
+          key: ${{ secrets.FRONTEND_SSH_KEY }}
+          script: |
+            cat > /home/ubuntu/backend/.env << 'ENVEOF'
+            ${{ secrets.BACKEND_ENV }}
+            ENVEOF
+
       - name: Deploy Backend Service Config via SCP
         uses: appleboy/scp-action@master
         with:
