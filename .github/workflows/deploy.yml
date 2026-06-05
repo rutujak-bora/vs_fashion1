@@ -13,19 +13,28 @@ jobs:
       - name: Deploy Backend to EC2 via SCP
         uses: appleboy/scp-action@master
         with:
-          host: ${{ secrets.BACKEND_IP }}
+          host: ${{ secrets.FRONTEND_IP }}
           username: ubuntu
-          key: ${{ secrets.BACKEND_SSH_KEY }}
+          key: ${{ secrets.FRONTEND_SSH_KEY }}
           source: "backend/*"
           target: "/home/ubuntu/backend"
           strip_components: 1
 
+      - name: Deploy Backend Service Config via SCP
+        uses: appleboy/scp-action@master
+        with:
+          host: ${{ secrets.FRONTEND_IP }}
+          username: ubuntu
+          key: ${{ secrets.FRONTEND_SSH_KEY }}
+          source: "vs-backend.service"
+          target: "/home/ubuntu"
+
       - name: Update Live Backend
         uses: appleboy/ssh-action@master
         with:
-          host: ${{ secrets.BACKEND_IP }}
+          host: ${{ secrets.FRONTEND_IP }}
           username: ubuntu
-          key: ${{ secrets.BACKEND_SSH_KEY }}
+          key: ${{ secrets.FRONTEND_SSH_KEY }}
           script: |
             set -e
             cd /home/ubuntu/backend
@@ -34,6 +43,11 @@ jobs:
             fi
             ./venv/bin/pip install -r requirements.txt
             ./venv/bin/python seed_policies.py || echo "Seed failed, ignoring..."
+            
+            # Setup and restart systemd service on frontend server
+            sudo cp /home/ubuntu/vs-backend.service /etc/systemd/system/vs-backend.service
+            sudo systemctl daemon-reload
+            sudo systemctl enable vs-backend.service
             sudo systemctl restart vs-backend.service
 
   deploy-frontend:
