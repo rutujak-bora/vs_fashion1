@@ -38,9 +38,12 @@ jobs:
           script: |
             set -e
             cd /home/ubuntu/backend
-            # Ensure system-level python3-venv and pip are available
-            sudo apt-get install -y python3-venv python3-pip
-            # Always recreate venv to avoid stale/broken environments (pip cache makes this fast)
+            # Install only minimal packages needed — no-install-recommends avoids 300MB+ of compiler tools
+            sudo apt-get install -y --no-install-recommends python3-venv python3-pip
+            # Clean apt cache immediately to free disk space
+            sudo apt-get clean
+            sudo rm -rf /var/lib/apt/lists/*
+            # Always recreate venv to avoid stale/broken environments
             rm -rf venv
             python3 -m venv venv
             ./venv/bin/pip install --upgrade pip
@@ -70,6 +73,20 @@ jobs:
           npm install ajv@^8 --legacy-peer-deps
           REACT_APP_BACKEND_URL="" CI=false npm run build
           
+      - name: Free Disk Space on Server
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.FRONTEND_IP }}
+          username: ubuntu
+          key: ${{ secrets.FRONTEND_SSH_KEY }}
+          script: |
+            # Remove apt cache and old build directories to free disk space
+            sudo apt-get clean
+            sudo apt-get autoremove -y || true
+            sudo rm -rf /var/lib/apt/lists/*
+            sudo rm -rf /home/ubuntu/frontend/build_old
+            df -h /
+
       - name: Deploy Frontend to EC2
         uses: appleboy/scp-action@master
         with:
