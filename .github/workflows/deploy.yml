@@ -40,11 +40,10 @@ jobs:
             cd /home/ubuntu/backend
             # Ensure system-level python3-venv and pip are available
             sudo apt-get install -y python3-venv python3-pip
-            # If venv is missing or broken (e.g. wrong Python version / missing ensurepip), recreate it
-            if [ ! -d "venv" ] || ! ./venv/bin/python3 --version > /dev/null 2>&1; then
-              rm -rf venv
-              python3 -m venv venv
-            fi
+            # Always recreate venv to avoid stale/broken environments (pip cache makes this fast)
+            rm -rf venv
+            python3 -m venv venv
+            ./venv/bin/pip install --upgrade pip
             ./venv/bin/pip install -r requirements.txt
             ./venv/bin/python seed_policies.py || echo "Seed failed, ignoring..."
             
