@@ -648,28 +648,44 @@ async def upload_image(file: UploadFile = File(...), current_user: dict = Depend
     aws_access_key = os.environ.get("AWS_ACCESS_KEY_ID")
     aws_secret_key = os.environ.get("AWS_SECRET_ACCESS_KEY")
     aws_region = os.environ.get("AWS_REGION", "ap-south-1")
+    s3_endpoint = os.environ.get("S3_ENDPOINT_URL")
+    s3_public_url = os.environ.get("S3_PUBLIC_URL")
 
     if s3_bucket and aws_access_key and aws_secret_key:
         try:
-            s3_client = boto3.client(
-                's3',
-                aws_access_key_id=aws_access_key,
-                aws_secret_access_key=aws_secret_key,
-                region_name=aws_region
-            )
+            client_kwargs = {
+                "service_name": "s3",
+                "aws_access_key_id": aws_access_key,
+                "aws_secret_access_key": aws_secret_key,
+                "region_name": aws_region,
+            }
+            if s3_endpoint:
+                client_kwargs["endpoint_url"] = s3_endpoint
+                
+            s3_client = boto3.client(**client_kwargs)
             contents = await file.read()
-            s3_client.put_object(
-                Bucket=s3_bucket,
-                Key=f"images/{filename}",
-                Body=contents,
-                ContentType=file.content_type,
-                ACL='public-read'
-            )
-            s3_url = f"https://{s3_bucket}.s3.{aws_region}.amazonaws.com/images/{filename}"
+            
+            put_kwargs = {
+                "Bucket": s3_bucket,
+                "Key": f"images/{filename}",
+                "Body": contents,
+                "ContentType": file.content_type,
+            }
+            # R2 and some S3-compatible APIs fail if ACL is specified
+            if not s3_endpoint:
+                put_kwargs["ACL"] = "public-read"
+                
+            s3_client.put_object(**put_kwargs)
+            
+            if s3_public_url:
+                s3_url = f"{s3_public_url.rstrip('/')}/images/{filename}"
+            else:
+                s3_url = f"https://{s3_bucket}.s3.{aws_region}.amazonaws.com/images/{filename}"
+                
             return {"url": s3_url}
         except Exception as e:
             logging.error(f"Failed to upload to S3: {str(e)}")
-            raise HTTPException(status_code=500, detail="Failed to upload image to S3")
+            raise HTTPException(status_code=500, detail=f"Failed to upload image to S3: {str(e)}")
     else:
         file_path = UPLOAD_DIR / filename
         with open(file_path, "wb") as buffer:
