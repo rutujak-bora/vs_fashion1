@@ -670,6 +670,7 @@ async def upload_image(file: UploadFile = File(...), current_user: dict = Depend
                 "Key": f"images/{filename}",
                 "Body": contents,
                 "ContentType": file.content_type,
+                "CacheControl": "public, max-age=31536000"
             }
             # R2 and some S3-compatible APIs fail if ACL is specified
             if not s3_endpoint:
