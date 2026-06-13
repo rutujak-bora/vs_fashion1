@@ -143,17 +143,6 @@ jobs:
             sudo ln -sf /etc/nginx/sites-available/vs-frontend /etc/nginx/sites-enabled/vs-frontend
             sudo rm -f /etc/nginx/sites-enabled/default
 
-            # Ensure gzip is fully enabled (idempotent)
-            sudo tee /etc/nginx/conf.d/gzip_extra.conf > /dev/null << 'EOF'
-            gzip_vary on;
-            gzip_proxied any;
-            gzip_comp_level 6;
-            gzip_buffers 16 8k;
-            gzip_http_version 1.1;
-            gzip_min_length 256;
-            gzip_types text/plain text/css application/json application/javascript text/xml application/xml application/xml+rss text/javascript image/svg+xml font/woff font/woff2;
-            EOF
-
             # Test and reload Nginx
             sudo nginx -t
             sudo systemctl reload nginx
