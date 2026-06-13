@@ -145,7 +145,7 @@ class Product(BaseModel):
     color: str
     size_guide: Optional[str] = ""
     quantity: int
-    size_quantities: dict = Field(default_factory=dict)
+    size_quantities: Optional[dict] = Field(default_factory=dict)
     price: float
     discount_price: Optional[float] = None
     is_trending: bool = False
@@ -168,7 +168,7 @@ class ProductResponse(BaseModel):
     color: str
     size_guide: Optional[str] = ""
     quantity: int
-    size_quantities: dict = Field(default_factory=dict)
+    size_quantities: Optional[dict] = Field(default_factory=dict)
     price: float
     discount_price: Optional[float] = None
     is_trending: bool
@@ -949,7 +949,7 @@ async def create_order(order_data: OrderCreate, current_user: dict = Depends(get
         product = await db.products.find_one({"id": item.product_id}, {"_id": 0})
         if product:
             # Deduct from specific size if available
-            size_quantities = product.get("size_quantities", {})
+            size_quantities = product.get("size_quantities") or {}
             if item.size in size_quantities and size_quantities[item.size] >= item.quantity:
                 size_quantities[item.size] -= item.quantity
                 

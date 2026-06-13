@@ -1,6 +1,6 @@
 server {
     listen 80;
-    server_name 65.2.180.101 vs-fashion.com www.vs-fashion.com;
+    server_name 43.205.96.153 vs-fashion.com www.vs-fashion.com;
 
     location /api/ {
         proxy_pass http://127.0.0.1:8000/api/;

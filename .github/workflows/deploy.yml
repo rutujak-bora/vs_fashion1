@@ -9,13 +9,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
-      - name: Deploy Backend to EC2 via SCP
+
+      - name: Deploy Backend Code via SCP
         uses: appleboy/scp-action@master
         with:
-          host: ${{ secrets.FRONTEND_IP }}
+          host: ${{ secrets.LIGHTSAIL_IP }}
           username: ubuntu
-          key: ${{ secrets.FRONTEND_SSH_KEY }}
+          key: ${{ secrets.LIGHTSAIL_SSH_KEY }}
           source: "backend/*"
           target: "/home/ubuntu/backend"
           strip_components: 1
@@ -23,9 +23,9 @@ jobs:
       - name: Write Backend .env File
         uses: appleboy/ssh-action@master
         with:
-          host: ${{ secrets.FRONTEND_IP }}
+          host: ${{ secrets.LIGHTSAIL_IP }}
           username: ubuntu
-          key: ${{ secrets.FRONTEND_SSH_KEY }}
+          key: ${{ secrets.LIGHTSAIL_SSH_KEY }}
           envs: BACKEND_ENV
           script: |
             printf '%s\n' "$BACKEND_ENV" > /home/ubuntu/backend/.env
@@ -36,108 +36,128 @@ jobs:
       - name: Deploy Backend Service Config via SCP
         uses: appleboy/scp-action@master
         with:
-          host: ${{ secrets.FRONTEND_IP }}
+          host: ${{ secrets.LIGHTSAIL_IP }}
           username: ubuntu
-          key: ${{ secrets.FRONTEND_SSH_KEY }}
+          key: ${{ secrets.LIGHTSAIL_SSH_KEY }}
           source: "vs-backend.service"
           target: "/home/ubuntu"
 
       - name: Update Live Backend
         uses: appleboy/ssh-action@master
         with:
-          host: ${{ secrets.FRONTEND_IP }}
+          host: ${{ secrets.LIGHTSAIL_IP }}
           username: ubuntu
-          key: ${{ secrets.FRONTEND_SSH_KEY }}
+          key: ${{ secrets.LIGHTSAIL_SSH_KEY }}
           script: |
             set -e
             cd /home/ubuntu/backend
-            # Install only minimal packages needed — no-install-recommends avoids 300MB+ of compiler tools
+
+            # Install Python venv if missing
             sudo apt-get install -y --no-install-recommends python3-venv python3-pip
-            # Clean apt cache immediately to free disk space
             sudo apt-get clean
             sudo rm -rf /var/lib/apt/lists/*
-            # Always recreate venv to avoid stale/broken environments
+
+            # Recreate venv to avoid stale environments
             rm -rf venv
             python3 -m venv venv
             ./venv/bin/pip install --upgrade pip
             ./venv/bin/pip install -r requirements.txt
             ./venv/bin/python seed_policies.py || echo "Seed failed, ignoring..."
-            
-            # Setup and restart systemd service on frontend server
+
+            # Setup and restart systemd service
             sudo cp /home/ubuntu/vs-backend.service /etc/systemd/system/vs-backend.service
             sudo systemctl daemon-reload
             sudo systemctl enable vs-backend.service
             sudo systemctl restart vs-backend.service
             sleep 3
-            echo "=== Backend Service Status ==="
-            sudo systemctl status vs-backend.service --no-pager -l || true
-            echo "=== Last 30 Journal Lines ==="
-            sudo journalctl -u vs-backend.service -n 30 --no-pager || true
+            echo "=== Backend Status ==="
+            sudo systemctl is-active vs-backend.service
+            echo "=== Last 20 Journal Lines ==="
+            sudo journalctl -u vs-backend.service -n 20 --no-pager || true
 
   deploy-frontend:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          
+
       - name: Build Frontend
         run: |
           cd frontend
           npm install --legacy-peer-deps
           npm install ajv@^8 --legacy-peer-deps
           REACT_APP_BACKEND_URL="" CI=false npm run build
-          
+
       - name: Free Disk Space on Server
         uses: appleboy/ssh-action@master
         with:
-          host: ${{ secrets.FRONTEND_IP }}
+          host: ${{ secrets.LIGHTSAIL_IP }}
           username: ubuntu
-          key: ${{ secrets.FRONTEND_SSH_KEY }}
+          key: ${{ secrets.LIGHTSAIL_SSH_KEY }}
           script: |
-            # Remove apt cache and old build directories to free disk space
             sudo apt-get clean
             sudo apt-get autoremove -y || true
             sudo rm -rf /var/lib/apt/lists/*
             sudo rm -rf /home/ubuntu/frontend/build_old
             df -h /
 
-      - name: Deploy Frontend to EC2
+      - name: Deploy Frontend Build via SCP
         uses: appleboy/scp-action@master
         with:
-          host: ${{ secrets.FRONTEND_IP }}
+          host: ${{ secrets.LIGHTSAIL_IP }}
           username: ubuntu
-          key: ${{ secrets.FRONTEND_SSH_KEY }}
+          key: ${{ secrets.LIGHTSAIL_SSH_KEY }}
           source: "frontend/build/*"
           target: "/home/ubuntu/frontend/build_new"
           strip_components: 2
 
-      - name: Deploy Nginx Config
+      - name: Deploy Nginx Config via SCP
         uses: appleboy/scp-action@master
         with:
-          host: ${{ secrets.FRONTEND_IP }}
+          host: ${{ secrets.LIGHTSAIL_IP }}
           username: ubuntu
-          key: ${{ secrets.FRONTEND_SSH_KEY }}
+          key: ${{ secrets.LIGHTSAIL_SSH_KEY }}
           source: "vs-frontend.nginx"
           target: "/home/ubuntu/"
 
-      - name: Update Live Frontend
+      - name: Update Live Frontend & Nginx
         uses: appleboy/ssh-action@master
         with:
-          host: ${{ secrets.FRONTEND_IP }}
+          host: ${{ secrets.LIGHTSAIL_IP }}
           username: ubuntu
-          key: ${{ secrets.FRONTEND_SSH_KEY }}
+          key: ${{ secrets.LIGHTSAIL_SSH_KEY }}
           script: |
+            set -e
+
             # Atomic swap of build directory
             sudo rm -rf /home/ubuntu/frontend/build_old
             [ -d "/home/ubuntu/frontend/build" ] && mv /home/ubuntu/frontend/build /home/ubuntu/frontend/build_old
             mv /home/ubuntu/frontend/build_new /home/ubuntu/frontend/build
-            
-            # Apply Nginx Config
+
+            # Apply Nginx site config
             sudo cp /home/ubuntu/vs-frontend.nginx /etc/nginx/sites-available/vs-frontend
-            sudo ln -sf /etc/nginx/sites-available/vs-frontend /etc/nginx/sites-enabled/
+            sudo ln -sf /etc/nginx/sites-available/vs-frontend /etc/nginx/sites-enabled/vs-frontend
             sudo rm -f /etc/nginx/sites-enabled/default
-            sudo systemctl restart nginx
+
+            # Ensure gzip is fully enabled (idempotent)
+            sudo tee /etc/nginx/conf.d/gzip_extra.conf > /dev/null << 'EOF'
+            gzip_vary on;
+            gzip_proxied any;
+            gzip_comp_level 6;
+            gzip_buffers 16 8k;
+            gzip_http_version 1.1;
+            gzip_min_length 256;
+            gzip_types text/plain text/css application/json application/javascript text/xml application/xml application/xml+rss text/javascript image/svg+xml font/woff font/woff2;
+            EOF
+
+            # Test and reload Nginx
+            sudo nginx -t
+            sudo systemctl reload nginx
+            echo "=== Nginx Status ==="
+            sudo systemctl is-active nginx
+            echo "=== Deploy Complete ==="
+            curl -s -o /dev/null -w "Site check: HTTP %{http_code}\n" http://vs-fashion.com/
