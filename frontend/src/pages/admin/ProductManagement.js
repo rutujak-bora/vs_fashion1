@@ -57,6 +57,97 @@ export default function ProductManagement() {
     }
   };
 
+  // Smart image compression using Canvas API
+  // Target: always ≤ 3 MB output — iterative quality reduction — no visible blur
+  const compressImage = (file) => {
+    return new Promise((resolve) => {
+      const TARGET_BYTES = 3 * 1024 * 1024; // 3 MB hard target
+      const MAX_DIMENSION = 2400;           // Max px width/height (print quality)
+      const MIN_QUALITY   = 0.50;           // Never go below 50% quality
+
+      // Already under 3MB — upload as-is, no touch
+      if (file.size <= TARGET_BYTES) {
+        resolve(file);
+        return;
+      }
+
+      const img = new Image();
+      const url = URL.createObjectURL(file);
+
+      img.onload = () => {
+        URL.revokeObjectURL(url);
+
+        let { width, height } = img;
+
+        // Step 1: Scale down large dimensions proportionally
+        if (width > MAX_DIMENSION || height > MAX_DIMENSION) {
+          const ratio = Math.min(MAX_DIMENSION / width, MAX_DIMENSION / height);
+          width  = Math.round(width  * ratio);
+          height = Math.round(height * ratio);
+        }
+
+        // Step 2: Iteratively reduce quality until size is under 3MB
+        const tryCompress = (w, h, quality) => {
+          const canvas = document.createElement('canvas');
+          canvas.width  = w;
+          canvas.height = h;
+          const ctx = canvas.getContext('2d');
+
+          // Highest quality scaling — no blur
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = 'high';
+          ctx.drawImage(img, 0, 0, w, h);
+
+          canvas.toBlob(
+            (blob) => {
+              if (!blob) { resolve(file); return; }
+
+              if (blob.size <= TARGET_BYTES || quality <= MIN_QUALITY) {
+                // Target reached or minimum quality floor hit
+                const compressedFile = new File(
+                  [blob],
+                  file.name.replace(/\.[^.]+$/, '.jpg'),
+                  { type: 'image/jpeg', lastModified: Date.now() }
+                );
+                resolve(compressedFile);
+              } else if (quality > 0.60) {
+                // Still too big — lower quality by 0.05 steps
+                tryCompress(w, h, parseFloat((quality - 0.05).toFixed(2)));
+              } else {
+                // Quality already low — reduce dimensions by 20% and retry
+                const newW = Math.round(w * 0.80);
+                const newH = Math.round(h * 0.80);
+                if (newW < 400 || newH < 400) {
+                  // Dimensions too small — accept current result
+                  const compressedFile = new File(
+                    [blob],
+                    file.name.replace(/\.[^.]+$/, '.jpg'),
+                    { type: 'image/jpeg', lastModified: Date.now() }
+                  );
+                  resolve(compressedFile);
+                } else {
+                  tryCompress(newW, newH, 0.75); // Reset quality after resize
+                }
+              }
+            },
+            'image/jpeg',
+            quality
+          );
+        };
+
+        tryCompress(width, height, 0.92); // Start at 92% — high quality, no visible blur
+      };
+
+      img.onerror = () => {
+        URL.revokeObjectURL(url);
+        resolve(file); // Fallback: upload original on error
+      };
+
+      img.src = url;
+    });
+  };
+
+
   const handleImageUpload = async (e) => {
     const files = Array.from(e.target.files);
     if (files.length === 0) return;
@@ -64,9 +155,24 @@ export default function ProductManagement() {
     setUploading(true);
     try {
       const uploadPromises = files.map(async (file) => {
-        const formData = new FormData();
-        formData.append('file', file);
-        const response = await axios.post(`${API}/products/upload`, formData, {
+        // Notify user about 3MB compression
+        if (file.size > 3 * 1024 * 1024) {
+          const sizeMB = (file.size / (1024 * 1024)).toFixed(1);
+          toast.info(`Image is ${sizeMB} MB — auto-compressing to under 3 MB...`);
+        }
+
+        // Compress image before uploading
+        const compressedFile = await compressImage(file);
+
+        const originalMB = (file.size / (1024 * 1024)).toFixed(1);
+        const compressedMB = (compressedFile.size / (1024 * 1024)).toFixed(1);
+        if (file.size !== compressedFile.size) {
+          console.log(`Compressed: ${originalMB} MB → ${compressedMB} MB`);
+        }
+
+        const data = new FormData();
+        data.append('file', compressedFile);
+        const response = await axios.post(`${API}/products/upload`, data, {
           headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'multipart/form-data' }
         });
         return response.data.url;
@@ -374,7 +480,7 @@ export default function ProductManagement() {
                     </div>
                   ))}
                   {formData.images.length < 4 && (
-                    <label className="aspect-square bg-gray-100 border-2 border-dashed border-gray-300 flex items-center justify-center cursor-pointer hover:bg-gray-200">
+                    <label className="aspect-square bg-gray-100 border-2 border-dashed border-gray-300 flex flex-col items-center justify-center cursor-pointer hover:bg-gray-200 transition-colors">
                       <input
                         type="file"
                         multiple
@@ -384,11 +490,26 @@ export default function ProductManagement() {
                         disabled={uploading}
                         className="hidden"
                       />
-                      <Upload size={24} className="text-gray-400" />
+                      {uploading ? (
+                        <div className="flex flex-col items-center gap-1">
+                          <div className="w-5 h-5 border-2 border-gray-400 border-t-[#4A2836] rounded-full animate-spin" />
+                          <span className="text-xs text-gray-500 text-center px-1">Compressing...</span>
+                        </div>
+                      ) : (
+                        <>
+                          <Upload size={24} className="text-gray-400" />
+                          <span className="text-[10px] text-gray-400 mt-1 text-center px-1">Auto-compress</span>
+                        </>
+                      )}
                     </label>
                   )}
                 </div>
-                {uploading && <p className="text-sm text-gray-500 mt-2">Uploading...</p>}
+                {uploading && (
+                  <p className="text-sm text-[#4A2836] mt-2 flex items-center gap-1">
+                    <span className="inline-block w-3 h-3 border-2 border-[#4A2836] border-t-transparent rounded-full animate-spin" />
+                    Compressing & uploading image — please wait...
+                  </p>
+                )}
               </div>
 
               <div className="flex gap-4">

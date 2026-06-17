@@ -21,6 +21,13 @@ import boto3
 from botocore.exceptions import NoCredentialsError, ClientError
 import razorpay
 import logging
+from io import BytesIO
+try:
+    from PIL import Image as PILImage
+    PIL_AVAILABLE = True
+except ImportError:
+    PIL_AVAILABLE = False
+    logging.warning("Pillow not installed. Server-side image compression disabled.")
 
 # Logging configuration
 logging.basicConfig(
@@ -639,11 +646,91 @@ async def delete_collection(collection_id: str, current_user: dict = Depends(get
     return {"message": "Collection deleted"}
 
 
+def compress_image_bytes(contents: bytes, content_type: str) -> tuple[bytes, str]:
+    """
+    Smart server-side image compression using Pillow.
+    Target: always <= 3 MB output — no visible blur.
+    Strategy:
+      1. Convert to RGB JPEG
+      2. Scale to max 2400px using LANCZOS (best quality, no blur)
+      3. Iteratively reduce quality (88 -> 50) until <= 3 MB
+      4. If still too big, reduce dimensions by 20% steps and retry
+    """
+    TARGET_SIZE   = 3 * 1024 * 1024   # 3 MB hard target
+    MAX_DIMENSION = 2400               # Max px width/height
+    MIN_QUALITY   = 50                 # Never go below 50% quality
+
+    if not PIL_AVAILABLE or len(contents) <= TARGET_SIZE:
+        return contents, content_type
+
+    try:
+        img = PILImage.open(BytesIO(contents))
+
+        # Convert RGBA / palette / other modes to RGB for JPEG compatibility
+        if img.mode in ('RGBA', 'P', 'LA'):
+            background = PILImage.new('RGB', img.size, (255, 255, 255))
+            if img.mode == 'P':
+                img = img.convert('RGBA')
+            background.paste(img, mask=img.split()[-1] if img.mode in ('RGBA', 'LA') else None)
+            img = background
+        elif img.mode != 'RGB':
+            img = img.convert('RGB')
+
+        # Step 1: Scale down if dimensions are too large (LANCZOS = no blur)
+        w, h = img.size
+        if w > MAX_DIMENSION or h > MAX_DIMENSION:
+            ratio = min(MAX_DIMENSION / w, MAX_DIMENSION / h)
+            img = img.resize((round(w * ratio), round(h * ratio)), PILImage.LANCZOS)
+
+        original_mb = len(contents) / (1024 * 1024)
+        compressed = contents  # fallback default
+
+        # Step 2: Iteratively reduce quality until <= 3 MB
+        for quality in range(88, MIN_QUALITY - 1, -5):
+            output = BytesIO()
+            img.save(output, format='JPEG', quality=quality, optimize=True)
+            compressed = output.getvalue()
+            if len(compressed) <= TARGET_SIZE:
+                compressed_mb = len(compressed) / (1024 * 1024)
+                logging.info(f"Image compressed (quality={quality}%): {original_mb:.1f} MB -> {compressed_mb:.1f} MB")
+                return compressed, 'image/jpeg'
+
+        # Step 3: Quality floor hit — shrink dimensions by 20% steps and retry
+        current_img = img
+        for _ in range(6):  # Max 6 shrink steps
+            w, h = current_img.size
+            if w < 400 or h < 400:
+                break
+            new_w = round(w * 0.80)
+            new_h = round(h * 0.80)
+            current_img = current_img.resize((new_w, new_h), PILImage.LANCZOS)
+            output = BytesIO()
+            current_img.save(output, format='JPEG', quality=65, optimize=True)
+            compressed = output.getvalue()
+            if len(compressed) <= TARGET_SIZE:
+                break
+
+        compressed_mb = len(compressed) / (1024 * 1024)
+        logging.info(f"Image compressed (final): {original_mb:.1f} MB -> {compressed_mb:.1f} MB")
+        return compressed, 'image/jpeg'
+
+    except Exception as e:
+        logging.warning(f"Server-side compression failed, using original: {e}")
+        return contents, content_type
+
+
 @api_router.post("/products/upload")
 async def upload_image(file: UploadFile = File(...), current_user: dict = Depends(get_current_admin)):
-    file_ext = Path(file.filename).suffix
+    contents = await file.read()
+
+    # Auto-compress large images server-side (safety net)
+    compressed_contents, compressed_content_type = compress_image_bytes(contents, file.content_type or 'image/jpeg')
+
+    # Use .jpg extension if image was compressed to JPEG
+    original_ext = Path(file.filename).suffix
+    file_ext = '.jpg' if compressed_content_type == 'image/jpeg' else original_ext
     filename = f"{uuid.uuid4()}{file_ext}"
-    
+
     s3_bucket = os.environ.get("AWS_S3_BUCKET_NAME")
     aws_access_key = os.environ.get("AWS_ACCESS_KEY_ID")
     aws_secret_key = os.environ.get("AWS_SECRET_ACCESS_KEY")
@@ -661,28 +748,26 @@ async def upload_image(file: UploadFile = File(...), current_user: dict = Depend
             }
             if s3_endpoint:
                 client_kwargs["endpoint_url"] = s3_endpoint
-                
+
             s3_client = boto3.client(**client_kwargs)
-            contents = await file.read()
-            
+
             put_kwargs = {
                 "Bucket": s3_bucket,
                 "Key": f"images/{filename}",
-                "Body": contents,
-                "ContentType": file.content_type,
+                "Body": compressed_contents,
+                "ContentType": compressed_content_type,
                 "CacheControl": "public, max-age=31536000"
             }
-            # R2 and some S3-compatible APIs fail if ACL is specified
             if not s3_endpoint:
                 put_kwargs["ACL"] = "public-read"
-                
+
             s3_client.put_object(**put_kwargs)
-            
+
             if s3_public_url:
                 s3_url = f"{s3_public_url.rstrip('/')}/images/{filename}"
             else:
                 s3_url = f"https://{s3_bucket}.s3.{aws_region}.amazonaws.com/images/{filename}"
-                
+
             return {"url": s3_url}
         except Exception as e:
             logging.error(f"Failed to upload to S3: {str(e)}")
@@ -690,8 +775,9 @@ async def upload_image(file: UploadFile = File(...), current_user: dict = Depend
     else:
         file_path = UPLOAD_DIR / filename
         with open(file_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
+            buffer.write(compressed_contents)
         return {"url": f"/uploads/{filename}"}
+
 
 
 @api_router.get("/products", response_model=List[ProductResponse])

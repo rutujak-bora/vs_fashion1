@@ -10,3 +10,4 @@ python-multipart
 aiosmtplib
 boto3
 razorpay
+Pillow
