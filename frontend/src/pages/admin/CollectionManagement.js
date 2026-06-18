@@ -34,7 +34,7 @@ export default function CollectionManagement() {
 
   const fetchCollections = async () => {
     try {
-      const response = await axios.get(`${API}/collections`);
+      const response = await axios.get(`${API}/collections?all_collections=true`);
       setCollections(response.data);
     } catch (error) {
       console.error('Error fetching collections:', error);

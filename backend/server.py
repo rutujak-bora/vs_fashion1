@@ -609,8 +609,10 @@ async def admin_login(user_data: UserLogin):
 
 
 @api_router.get("/collections", response_model=List[Collection])
-async def get_collections(show_on_home: Optional[bool] = None):
-    query = {"is_active": True}
+async def get_collections(show_on_home: Optional[bool] = None, all_collections: Optional[bool] = False):
+    query = {}
+    if not all_collections:
+        query["is_active"] = True
     if show_on_home is not None:
         query["show_on_home"] = show_on_home
     

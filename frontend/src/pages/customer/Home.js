@@ -229,17 +229,35 @@ export default function Home() {
                   to={`/collection/${collection.id}`}
                   className="group relative overflow-hidden aspect-[4/5] md:aspect-[3/4] block"
                 >
-                  <img
-                    src={(() => {
-                      const img = collection.home_image_url || collection.image_url;
-                      if (!img) return '/images/placeholder.jpg';
-                      return img.startsWith('http') ? img : `${BACKEND_URL}${img}`;
-                    })()}
-                    alt={collection.name}
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
-                  />
+                  {(() => {
+                    const img = collection.home_image_url || collection.image_url;
+                    if (!img) {
+                      return (
+                        <div className="w-full h-full bg-[#8B1B4A]/5 flex items-center justify-center border border-[#8B1B4A]/10 group-hover:scale-105 transition-transform duration-700">
+                          <span className="text-[#8B1B4A]/25 font-bold text-6xl select-none" style={{ fontFamily: 'Playfair Display, serif' }}>
+                            {collection.name.charAt(0).toUpperCase()}
+                          </span>
+                        </div>
+                      );
+                    }
+                    const srcUrl = img.startsWith('http') ? img : `${BACKEND_URL}${img}`;
+                    return (
+                      <img
+                        src={srcUrl}
+                        alt={collection.name}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
+                        onError={(e) => {
+                          e.target.style.display = 'none';
+                          const fallback = document.createElement('div');
+                          fallback.className = "absolute inset-0 bg-[#8B1B4A]/5 flex items-center justify-center border border-[#8B1B4A]/10";
+                          fallback.innerHTML = `<span class="text-[#8B1B4A]/25 font-bold text-6xl select-none" style="font-family: Playfair Display, serif">${collection.name.charAt(0).toUpperCase()}</span>`;
+                          e.target.parentNode.insertBefore(fallback, e.target);
+                        }}
+                      />
+                    );
+                  })()}
                   {/* Text overlay perfectly matching "BOAT NECK", etc. */}
-                  <div className="absolute inset-x-0 top-0 pt-10 md:pt-14 flex flex-col items-center">
+                  <div className="absolute inset-x-0 top-0 pt-10 md:pt-14 flex flex-col items-center z-10">
                     <h3 
                       className="text-xl md:text-3xl uppercase tracking-[0.25em] text-white text-center leading-tight drop-shadow-md" 
                       style={{ fontFamily: 'Playfair Display, serif' }}
@@ -251,7 +269,7 @@ export default function Home() {
                     </h3>
                   </div>
                   {/* Subtle dark gradient overlay to ensure text visibility on top if image is bright */}
-                  <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-transparent to-black/20 opacity-70 group-hover:opacity-90 transition-opacity duration-300 pointer-events-none" />
+                  <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-transparent to-black/20 opacity-70 group-hover:opacity-90 transition-opacity duration-300 pointer-events-none z-0" />
                 </Link>
               ))}
             </div>
