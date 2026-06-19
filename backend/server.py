@@ -473,7 +473,7 @@ async def login(user_data: UserLogin):
             "full_name": user["full_name"], 
             "mobile": user.get("mobile", ""), 
             "address": user.get("address", ""),
-            "addresses": user.get("addresses", [])
+            "addresses": user.get("addresses") or []
         }}
     except HTTPException:
         raise
@@ -487,7 +487,7 @@ async def get_addresses(current_user: dict = Depends(get_current_user)):
     user = await db.users.find_one({"id": current_user["id"]}, {"_id": 0, "addresses": 1})
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
-    return user.get("addresses", [])
+    return user.get("addresses") or []
 
 
 @api_router.post("/user/addresses", response_model=Address)
@@ -498,7 +498,7 @@ async def add_address(addr_data: AddressCreate, current_user: dict = Depends(get
     
     new_address = Address(**addr_data.model_dump())
     
-    addresses = user.get("addresses", [])
+    addresses = user.get("addresses") or []
     
     # If this is the first address or set as default, unset others
     if not addresses or new_address.is_default:
@@ -521,7 +521,7 @@ async def delete_address(address_id: str, current_user: dict = Depends(get_curre
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     
-    addresses = user.get("addresses", [])
+    addresses = user.get("addresses") or []
     new_addresses = [addr for addr in addresses if addr["id"] != address_id]
     
     if len(new_addresses) == len(addresses):
@@ -544,7 +544,7 @@ async def set_default_address(address_id: str, current_user: dict = Depends(get_
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     
-    addresses = user.get("addresses", [])
+    addresses = user.get("addresses") or []
     found = False
     for addr in addresses:
         if addr["id"] == address_id:
