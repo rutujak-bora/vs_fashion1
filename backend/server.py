@@ -25,6 +25,12 @@ from io import BytesIO
 try:
     from PIL import Image as PILImage
     PIL_AVAILABLE = True
+    try:
+        from pillow_heif import register_heif_opener
+        register_heif_opener()
+        logging.info("HEIF/HEIC support enabled for image compression.")
+    except ImportError:
+        logging.warning("pillow-heif not installed. HEIC image compression disabled.")
 except ImportError:
     PIL_AVAILABLE = False
     logging.warning("Pillow not installed. Server-side image compression disabled.")

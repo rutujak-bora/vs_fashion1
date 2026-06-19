@@ -11,3 +11,4 @@ aiosmtplib
 boto3
 razorpay
 Pillow
+pillow-heif
