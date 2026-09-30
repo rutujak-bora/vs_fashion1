@@ -39,7 +39,7 @@ All online payments are securely processed through trusted payment gateways, and
 
 By using our website, you consent to our Privacy Policy.
             """,
-            "updated_at": f"{datetime.now(timezone.utc).isoformat()} - LocalUpdate"
+            "updated_at": datetime.now(timezone.utc).isoformat()
         },
         {
             "id": "refund",
@@ -59,7 +59,7 @@ Payment Mode:
 We accept online payments only.
 Cash on Delivery (COD) is not available.
             """,
-            "updated_at": f"{datetime.now(timezone.utc).isoformat()} - LocalUpdate"
+            "updated_at": datetime.now(timezone.utc).isoformat()
         },
         {
             "id": "shipping",
@@ -68,7 +68,7 @@ Orders are processed and shipped within 4 days after order confirmation.
 Shipping charges are ₹70 for deliveries across Maharashtra. For other states, shipping charges may vary and will be calculated at checkout.
 Delivery time may vary depending on location and courier services.
             """,
-            "updated_at": f"{datetime.now(timezone.utc).isoformat()} - LocalUpdate"
+            "updated_at": datetime.now(timezone.utc).isoformat()
         },
         {
             "id": "contact",

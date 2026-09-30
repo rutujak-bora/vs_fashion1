@@ -12,3 +12,4 @@ boto3
 razorpay
 Pillow
 pillow-heif
+slowapi
