@@ -1,15 +1,17 @@
-from fastapi import FastAPI, APIRouter, HTTPException, UploadFile, File, Form, Depends
+from fastapi import FastAPI, APIRouter, HTTPException, UploadFile, File, Form, Depends, Request
 from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
+import re
 import logging
 from pathlib import Path
-from pydantic import BaseModel, EmailStr, Field, ConfigDict
-from typing import List, Optional
+from bson import ObjectId
+from pydantic import BaseModel, EmailStr, Field, ConfigDict, field_validator
+from typing import List, Optional, Any, Union
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import bcrypt
 from jose import JWTError, jwt
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -22,6 +24,9 @@ from botocore.exceptions import NoCredentialsError, ClientError
 import razorpay
 import logging
 from io import BytesIO
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 try:
     from PIL import Image as PILImage
     PIL_AVAILABLE = True
@@ -49,22 +54,40 @@ mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
 
-app = FastAPI()
-api_router = APIRouter(prefix="/api")
+# ============================================================
+# SECURITY: All secrets MUST come from environment variables.
+# Refuse to start if critical secrets are missing.
+# ============================================================
+_SECRET_KEY = os.environ.get("JWT_SECRET_KEY", "")
+if not _SECRET_KEY or _SECRET_KEY == "your-secret-key-change-in-production":
+    raise RuntimeError("SECURITY ERROR: JWT_SECRET_KEY env var is not set or is using the insecure default. Set a strong random secret.")
+SECRET_KEY = _SECRET_KEY
 
-SECRET_KEY = os.environ.get("JWT_SECRET_KEY", "your-secret-key-change-in-production")
+_RAZORPAY_KEY_ID = os.environ.get("RAZORPAY_KEY_ID", "")
+_RAZORPAY_KEY_SECRET = os.environ.get("RAZORPAY_KEY_SECRET", "")
+if not _RAZORPAY_KEY_ID or not _RAZORPAY_KEY_SECRET:
+    raise RuntimeError("SECURITY ERROR: RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET must be set in environment variables.")
+KEY_ID = _RAZORPAY_KEY_ID
+KEY_SECRET = _RAZORPAY_KEY_SECRET
+
 ALGORITHM = "HS256"
+TOKEN_EXPIRE_DAYS = 30
 security = HTTPBearer()
 
 UPLOAD_DIR = ROOT_DIR / "uploads"
 UPLOAD_DIR.mkdir(exist_ok=True)
 
+# Rate limiter setup
+limiter = Limiter(key_func=get_remote_address)
+
+app = FastAPI()
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+api_router = APIRouter(prefix="/api")
+
 app.mount("/uploads", StaticFiles(directory=str(UPLOAD_DIR)), name="uploads")
 
 # Razorpay Client
-load_dotenv()
-KEY_ID = os.getenv("RAZORPAY_KEY_ID", "rzp_test_Sm3FUWDSurPgJt")
-KEY_SECRET = os.getenv("RAZORPAY_KEY_SECRET", "cbizgrI7XmH2a2rgFXWC92ux")
 rzp_client = razorpay.Client(auth=(KEY_ID, KEY_SECRET))
 
 # WhatsApp Config (Business Number)
@@ -113,6 +136,23 @@ class UserRegister(BaseModel):
     mobile: str
     address: str
     password: str
+
+    @field_validator('password')
+    @classmethod
+    def validate_password_strength(cls, v):
+        if len(v) < 8:
+            raise ValueError('Password must be at least 8 characters long')
+        if not any(c.isdigit() for c in v):
+            raise ValueError('Password must contain at least one number')
+        return v
+
+    @field_validator('mobile')
+    @classmethod
+    def validate_mobile(cls, v):
+        digits = ''.join(c for c in v if c.isdigit())
+        if len(digits) < 10:
+            raise ValueError('Mobile number must be at least 10 digits')
+        return v
 
 
 class UserLogin(BaseModel):
@@ -165,6 +205,7 @@ class Product(BaseModel):
     is_new_arrival: bool = False
     is_best_seller: bool = False
     images: List[str] = []
+    video_url: Optional[str] = ""
     is_active: bool = True
     weight: float = 0.5
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
@@ -188,9 +229,35 @@ class ProductResponse(BaseModel):
     is_new_arrival: bool
     is_best_seller: bool
     images: List[str]
+    video_url: Optional[str] = ""
     is_active: bool
     weight: float = 0.5
     created_at: datetime
+
+
+class BulkProductItem(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    name: str
+    collection_id: Optional[str] = ""
+    collection_name: Optional[str] = ""
+    description: Optional[str] = ""
+    sizes: Optional[Any] = None
+    color: Optional[str] = "Default"
+    size_guide: Optional[str] = ""
+    quantity: Optional[int] = 1
+    size_quantities: Optional[dict] = Field(default_factory=dict)
+    price: float
+    discount_price: Optional[float] = None
+    is_trending: Optional[bool] = False
+    is_new_arrival: Optional[bool] = False
+    is_best_seller: Optional[bool] = False
+    images: Optional[List[str]] = Field(default_factory=list)
+    video_url: Optional[str] = ""
+    weight: Optional[float] = 0.5
+
+
+class BulkProductsRequest(BaseModel):
+    products: List[BulkProductItem]
 
 
 class CartItem(BaseModel):
@@ -213,6 +280,8 @@ class OrderItem(BaseModel):
     size: str
     quantity: int
     price: float
+    color: Optional[str] = ""
+    image_url: Optional[str] = ""
 
 
 class Order(BaseModel):
@@ -270,6 +339,23 @@ class PaymentCreate(BaseModel):
     amount: float = Field(..., ge=1)
 
 
+class Review(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    product_id: str
+    user_id: Optional[str] = None
+    user_name: str
+    rating: int = Field(..., ge=1, le=5)
+    comment: str
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class ReviewCreate(BaseModel):
+    rating: int = Field(..., ge=1, le=5)
+    comment: str
+    user_name: Optional[str] = None
+
+
 def hash_password(password: str) -> str:
     salt = bcrypt.gensalt()
     return bcrypt.hashpw(password.encode('utf-8'), salt).decode('utf-8')
@@ -282,8 +368,41 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
         return False
 
 
-def create_token(data: dict) -> str:
-    return jwt.encode(data, SECRET_KEY, algorithm=ALGORITHM)
+def create_token(data: dict, expires_days: int = TOKEN_EXPIRE_DAYS) -> str:
+    """Create a JWT token with an expiry claim for security."""
+    to_encode = data.copy()
+    expire = datetime.now(timezone.utc) + timedelta(days=expires_days)
+    to_encode.update({"exp": expire})
+    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+
+
+async def get_user_from_db(user_id: str):
+    """Robustly fetch user by id string or MongoDB _id with self-healing."""
+    if not user_id:
+        return None
+    # 1. Direct query by string 'id'
+    user = await db.users.find_one({"id": user_id})
+    if user:
+        return user
+    # 2. Try ObjectId query on '_id'
+    try:
+        if ObjectId.is_valid(user_id):
+            user = await db.users.find_one({"_id": ObjectId(user_id)})
+            if user:
+                canon_id = user.get("id") or str(user["_id"])
+                await db.users.update_one({"_id": user["_id"]}, {"$set": {"id": canon_id}})
+                user["id"] = canon_id
+                return user
+    except Exception:
+        pass
+    # 3. Try string query on '_id'
+    user = await db.users.find_one({"_id": user_id})
+    if user:
+        canon_id = user.get("id") or str(user["_id"])
+        await db.users.update_one({"_id": user["_id"]}, {"$set": {"id": canon_id}})
+        user["id"] = canon_id
+        return user
+    return None
 
 
 async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
@@ -292,11 +411,22 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         user_id: str = payload.get("sub")
         user_type: str = payload.get("type")
-        if user_id is None:
+        if not user_id:
             raise HTTPException(status_code=401, detail="Invalid token")
-        return {"id": user_id, "type": user_type}
+            
+        if user_type == "admin":
+            admin = await db.admins.find_one({"$or": [{"id": user_id}, {"_id": user_id}]})
+            if not admin:
+                raise HTTPException(status_code=401, detail="Admin session expired. Please log in again.")
+            return {"id": user_id, "type": "admin"}
+        else:
+            user = await get_user_from_db(user_id)
+            if not user:
+                raise HTTPException(status_code=401, detail="User account not found or session expired. Please log in again.")
+            canonical_id = user.get("id") or str(user.get("_id"))
+            return {"id": canonical_id, "type": "user"}
     except JWTError:
-        raise HTTPException(status_code=401, detail="Invalid token")
+        raise HTTPException(status_code=401, detail="Invalid or expired session. Please log in again.")
 
 
 async def get_current_admin(current_user: dict = Depends(get_current_user)):
@@ -343,20 +473,29 @@ async def send_order_email(order: Order):
     
     items_html = ""
     for item in order.items:
+        img_url = item.image_url or ""
+        if img_url and not img_url.startswith("http"):
+            img_url = f"https://vs-fashion.com{img_url}"
+            
+        img_cell = f'<img src="{img_url}" alt="{item.product_name}" style="width: 55px; height: 70px; object-fit: cover; border-radius: 4px;" />' if img_url else '<div style="width:55px;height:70px;background:#f0f0f0;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:10px;color:#888;">No Img</div>'
+        color_str = item.color or "-"
+
         items_html += f"""
         <tr>
-            <td style="padding: 10px; border: 1px solid #ddd;">{item.product_name}</td>
-            <td style="padding: 10px; border: 1px solid #ddd;">{item.size}</td>
-            <td style="padding: 10px; border: 1px solid #ddd;">{item.quantity}</td>
-            <td style="padding: 10px; border: 1px solid #ddd;">₹{item.price:.2f}</td>
-            <td style="padding: 10px; border: 1px solid #ddd;">₹{item.price * item.quantity:.2f}</td>
+            <td style="padding: 8px; border: 1px solid #ddd; text-align: center; vertical-align: middle;">{img_cell}</td>
+            <td style="padding: 10px; border: 1px solid #ddd; vertical-align: middle;"><strong>{item.product_name}</strong></td>
+            <td style="padding: 10px; border: 1px solid #ddd; vertical-align: middle;">{color_str}</td>
+            <td style="padding: 10px; border: 1px solid #ddd; vertical-align: middle;">{item.size}</td>
+            <td style="padding: 10px; border: 1px solid #ddd; vertical-align: middle;">{item.quantity}</td>
+            <td style="padding: 10px; border: 1px solid #ddd; vertical-align: middle;">₹{item.price:.2f}</td>
+            <td style="padding: 10px; border: 1px solid #ddd; vertical-align: middle;">₹{item.price * item.quantity:.2f}</td>
         </tr>
         """
     
     html = f"""
     <html>
-        <body style="font-family: Arial, sans-serif;">
-            <h2>New Order Received</h2>
+        <body style="font-family: Arial, sans-serif; color: #333;">
+            <h2 style="color: #8B1B4A;">New Order Received!</h2>
             <h3>Order Details</h3>
             <p><strong>Order ID:</strong> {order.id}</p>
             <p><strong>Order Date:</strong> {order.created_at.strftime('%Y-%m-%d %H:%M:%S')}</p>
@@ -370,12 +509,14 @@ async def send_order_email(order: Order):
             <h3>Order Items</h3>
             <table style="border-collapse: collapse; width: 100%;">
                 <thead>
-                    <tr>
-                        <th style="padding: 10px; border: 1px solid #ddd; background-color: #f2f2f2;">Product</th>
-                        <th style="padding: 10px; border: 1px solid #ddd; background-color: #f2f2f2;">Size</th>
-                        <th style="padding: 10px; border: 1px solid #ddd; background-color: #f2f2f2;">Quantity</th>
-                        <th style="padding: 10px; border: 1px solid #ddd; background-color: #f2f2f2;">Price</th>
-                        <th style="padding: 10px; border: 1px solid #ddd; background-color: #f2f2f2;">Subtotal</th>
+                    <tr style="background-color: #8B1B4A; color: white;">
+                        <th style="padding: 10px; border: 1px solid #ddd; text-align: center;">Image</th>
+                        <th style="padding: 10px; border: 1px solid #ddd; text-align: left;">Product</th>
+                        <th style="padding: 10px; border: 1px solid #ddd; text-align: left;">Color</th>
+                        <th style="padding: 10px; border: 1px solid #ddd; text-align: left;">Size</th>
+                        <th style="padding: 10px; border: 1px solid #ddd; text-align: left;">Quantity</th>
+                        <th style="padding: 10px; border: 1px solid #ddd; text-align: left;">Price</th>
+                        <th style="padding: 10px; border: 1px solid #ddd; text-align: left;">Subtotal</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -383,7 +524,7 @@ async def send_order_email(order: Order):
                 </tbody>
             </table>
             
-            <h3>Total Amount: ₹{order.total_amount:.2f}</h3>
+            <h3 style="color: #8B1B4A; margin-top: 20px;">Total Amount: ₹{order.total_amount:.2f}</h3>
         </body>
     </html>
     """
@@ -410,7 +551,8 @@ async def root():
 
 
 @api_router.post("/auth/register")
-async def register(user_data: UserRegister):
+@limiter.limit("5/hour")
+async def register(request: Request, user_data: UserRegister):
     existing = await db.users.find_one({"email": user_data.email}, {"_id": 0})
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
@@ -454,23 +596,27 @@ async def register(user_data: UserRegister):
 
 
 @api_router.post("/auth/login")
-async def login(user_data: UserLogin):
+@limiter.limit("10/hour")
+async def login(request: Request, user_data: UserLogin):
     try:
-        user = await db.users.find_one({"email": user_data.email}, {"_id": 0})
-        if not user or not verify_password(user_data.password, user["password_hash"]):
+        email = str(user_data.email).lower().strip()
+        user = await db.users.find_one({"email": email})
+        if not user:
+            user = await db.users.find_one({"email": {"$regex": f"^{re.escape(email)}$", "$options": "i"}})
+            
+        if not user or not verify_password(user_data.password, user.get("password_hash", "")):
             raise HTTPException(status_code=401, detail="Invalid credentials")
         
         user_id = user.get("id")
         if not user_id:
-            logger.warning(f"User {user_data.email} is missing 'id' field")
-            # Fallback to a new ID if missing (or you could raise an error)
-            user_id = str(uuid.uuid4())
+            user_id = str(user.get("_id") or uuid.uuid4())
+            await db.users.update_one({"_id": user["_id"]}, {"$set": {"id": user_id}})
             
         token = create_token({"sub": user_id, "type": "user"})
         return {"token": token, "user": {
             "id": user_id, 
-            "email": user["email"], 
-            "full_name": user["full_name"], 
+            "email": user.get("email", ""), 
+            "full_name": user.get("full_name", ""), 
             "mobile": user.get("mobile", ""), 
             "address": user.get("address", ""),
             "addresses": user.get("addresses") or []
@@ -479,12 +625,12 @@ async def login(user_data: UserLogin):
         raise
     except Exception as e:
         logger.error(f"Unexpected error in user login: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Internal Server Error: {str(e)}")
+        raise HTTPException(status_code=500, detail="An internal server error occurred. Please try again.")
 
 
 @api_router.get("/user/addresses", response_model=List[Address])
 async def get_addresses(current_user: dict = Depends(get_current_user)):
-    user = await db.users.find_one({"id": current_user["id"]}, {"_id": 0, "addresses": 1})
+    user = await get_user_from_db(current_user["id"])
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     return user.get("addresses") or []
@@ -492,12 +638,11 @@ async def get_addresses(current_user: dict = Depends(get_current_user)):
 
 @api_router.post("/user/addresses", response_model=Address)
 async def add_address(addr_data: AddressCreate, current_user: dict = Depends(get_current_user)):
-    user = await db.users.find_one({"id": current_user["id"]})
+    user = await get_user_from_db(current_user["id"])
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     
     new_address = Address(**addr_data.model_dump())
-    
     addresses = user.get("addresses") or []
     
     # If this is the first address or set as default, unset others
@@ -509,30 +654,60 @@ async def add_address(addr_data: AddressCreate, current_user: dict = Depends(get
     addresses.append(new_address.model_dump())
     
     await db.users.update_one(
-        {"id": current_user["id"]},
+        {"_id": user["_id"]},
         {"$set": {"addresses": addresses}}
     )
     return new_address
 
 
+@api_router.put("/user/addresses/{address_id}", response_model=Address)
+async def update_address(address_id: str, addr_data: AddressCreate, current_user: dict = Depends(get_current_user)):
+    user = await get_user_from_db(current_user["id"])
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    addresses = user.get("addresses") or []
+    found = False
+    updated_address = None
+    for i, addr in enumerate(addresses):
+        if addr.get("id") == address_id:
+            updated_address = Address(id=address_id, **addr_data.model_dump())
+            # If this address is being set as default, unset others first
+            if updated_address.is_default:
+                for other in addresses:
+                    other["is_default"] = False
+            addresses[i] = updated_address.model_dump()
+            found = True
+            break
+
+    if not found:
+        raise HTTPException(status_code=404, detail="Address not found")
+
+    await db.users.update_one(
+        {"_id": user["_id"]},
+        {"$set": {"addresses": addresses}}
+    )
+    return updated_address
+
+
 @api_router.delete("/user/addresses/{address_id}")
 async def delete_address(address_id: str, current_user: dict = Depends(get_current_user)):
-    user = await db.users.find_one({"id": current_user["id"]})
+    user = await get_user_from_db(current_user["id"])
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     
     addresses = user.get("addresses") or []
-    new_addresses = [addr for addr in addresses if addr["id"] != address_id]
+    new_addresses = [addr for addr in addresses if addr.get("id") != address_id]
     
     if len(new_addresses) == len(addresses):
         raise HTTPException(status_code=404, detail="Address not found")
         
     # If we deleted the default address, set another one as default
-    if any(addr["id"] == address_id and addr.get("is_default") for addr in addresses) and new_addresses:
+    if any(addr.get("id") == address_id and addr.get("is_default") for addr in addresses) and new_addresses:
         new_addresses[0]["is_default"] = True
         
     await db.users.update_one(
-        {"id": current_user["id"]},
+        {"_id": user["_id"]},
         {"$set": {"addresses": new_addresses}}
     )
     return {"message": "Address deleted"}
@@ -540,14 +715,14 @@ async def delete_address(address_id: str, current_user: dict = Depends(get_curre
 
 @api_router.patch("/user/addresses/{address_id}/default")
 async def set_default_address(address_id: str, current_user: dict = Depends(get_current_user)):
-    user = await db.users.find_one({"id": current_user["id"]})
+    user = await get_user_from_db(current_user["id"])
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     
     addresses = user.get("addresses") or []
     found = False
     for addr in addresses:
-        if addr["id"] == address_id:
+        if addr.get("id") == address_id:
             addr["is_default"] = True
             found = True
         else:
@@ -573,7 +748,8 @@ async def health_check():
 
 
 @api_router.post("/auth/admin/login")
-async def admin_login(user_data: UserLogin):
+@limiter.limit("5/hour")
+async def admin_login(request: Request, user_data: UserLogin):
     try:
         email = str(user_data.email).lower().strip()
         logger.info(f"Admin login attempt for: {email}")
@@ -611,7 +787,7 @@ async def admin_login(user_data: UserLogin):
         raise
     except Exception as e:
         logger.error(f"CRITICAL: Unexpected error in admin_login: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Internal Server Error: {str(e)}")
+        raise HTTPException(status_code=500, detail="An internal server error occurred. Please try again.")
 
 
 @api_router.get("/collections", response_model=List[Collection])
@@ -778,8 +954,11 @@ async def upload_image(file: UploadFile = File(...), current_user: dict = Depend
 
             return {"url": s3_url}
         except Exception as e:
-            logging.error(f"Failed to upload to S3: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Failed to upload image to S3: {str(e)}")
+            logging.error(f"Failed to upload to S3: {str(e)}. Falling back to local storage.")
+            file_path = UPLOAD_DIR / filename
+            with open(file_path, "wb") as buffer:
+                buffer.write(compressed_contents)
+            return {"url": f"/uploads/{filename}"}
     else:
         file_path = UPLOAD_DIR / filename
         with open(file_path, "wb") as buffer:
@@ -805,7 +984,7 @@ async def get_products(
     if is_best_seller is not None:
         query["is_best_seller"] = is_best_seller
     
-    products = await db.products.find(query, {"_id": 0}).to_list(1000)
+    products = await db.products.find(query, {"_id": 0}).sort("created_at", -1).to_list(1000)
     
     for product in products:
         if isinstance(product.get('created_at'), str):
@@ -848,6 +1027,7 @@ async def create_product(
     is_new_arrival: bool = Form(False),
     is_best_seller: bool = Form(False),
     images: str = Form("[]"),
+    video_url: str = Form(""),
     current_user: dict = Depends(get_current_admin)
 ):
     import json
@@ -868,7 +1048,8 @@ async def create_product(
         is_trending=is_trending,
         is_new_arrival=is_new_arrival,
         is_best_seller=is_best_seller,
-        images=images_list
+        images=images_list,
+        video_url=video_url
     )
     
     doc = product.model_dump()
@@ -876,6 +1057,99 @@ async def create_product(
     await db.products.insert_one(doc)
     
     return {"id": product.id, "message": "Product created"}
+
+
+@api_router.post("/products/bulk")
+async def create_products_bulk(
+    payload: BulkProductsRequest,
+    current_user: dict = Depends(get_current_admin)
+):
+    if not payload.products:
+        raise HTTPException(status_code=400, detail="No products provided")
+
+    # Load existing collections for matching
+    collections = await db.collections.find({}, {"_id": 0, "id": 1, "name": 1}).to_list(1000)
+    collection_map = {c.get("name", "").strip().lower(): c.get("id") for c in collections if c.get("name") and c.get("id")}
+    default_collection_id = collections[0]["id"] if collections else ""
+
+    docs_to_insert = []
+    created_products = []
+
+    for item in payload.products:
+        target_coll_id = (item.collection_id or "").strip()
+
+        # If no valid ID provided, resolve by collection_name
+        if not target_coll_id and item.collection_name:
+            c_name = item.collection_name.strip().lower()
+            if c_name in collection_map:
+                target_coll_id = collection_map[c_name]
+            else:
+                # Create collection on the fly if needed
+                new_coll = Collection(name=item.collection_name.strip())
+                new_coll_doc = new_coll.model_dump()
+                new_coll_doc["created_at"] = new_coll_doc["created_at"].isoformat()
+                await db.collections.insert_one(new_coll_doc)
+                collection_map[c_name] = new_coll.id
+                target_coll_id = new_coll.id
+
+        if not target_coll_id:
+            target_coll_id = default_collection_id
+
+        # Normalize sizes list
+        if isinstance(item.sizes, list):
+            sizes_list = [str(s).strip() for s in item.sizes if str(s).strip()]
+        elif isinstance(item.sizes, str):
+            sizes_list = [s.strip() for s in item.sizes.split(",") if s.strip()]
+        else:
+            sizes_list = ["Free Size"]
+        if not sizes_list:
+            sizes_list = ["Free Size"]
+
+        total_qty = int(item.quantity) if item.quantity is not None else 1
+        sq = item.size_quantities if isinstance(item.size_quantities, dict) else {}
+        if sq:
+            sq_sum = sum(int(v) for v in sq.values() if isinstance(v, (int, float, str)) and str(v).isdigit())
+            if sq_sum > 0:
+                total_qty = sq_sum
+        else:
+            per_size = max(1, total_qty // len(sizes_list))
+            sq = {s: per_size for s in sizes_list}
+
+        disc_price = float(item.discount_price) if item.discount_price not in (None, "", 0) else None
+
+        new_prod = Product(
+            name=item.name.strip(),
+            collection_id=target_coll_id,
+            description=item.description or "",
+            sizes=sizes_list,
+            color=item.color or "Default",
+            size_guide=item.size_guide or "",
+            quantity=total_qty,
+            size_quantities=sq,
+            price=float(item.price),
+            discount_price=disc_price,
+            is_trending=bool(item.is_trending),
+            is_new_arrival=bool(item.is_new_arrival),
+            is_best_seller=bool(item.is_best_seller),
+            images=item.images if isinstance(item.images, list) else [],
+            video_url=item.video_url or "",
+            weight=float(item.weight) if item.weight else 0.5
+        )
+
+        doc = new_prod.model_dump()
+        doc['created_at'] = doc['created_at'].isoformat()
+        docs_to_insert.append(doc)
+        created_products.append({"id": new_prod.id, "name": new_prod.name})
+
+    if docs_to_insert:
+        await db.products.insert_many(docs_to_insert)
+
+    return {
+        "success": True,
+        "count": len(created_products),
+        "products": created_products,
+        "message": f"Successfully created {len(created_products)} products"
+    }
 
 
 @api_router.put("/products/{product_id}")
@@ -896,6 +1170,7 @@ async def update_product(
     is_best_seller: bool = Form(False),
     is_active: bool = Form(True),
     images: str = Form("[]"),
+    video_url: str = Form(""),
     current_user: dict = Depends(get_current_admin)
 ):
     import json
@@ -917,7 +1192,8 @@ async def update_product(
         "is_new_arrival": is_new_arrival,
         "is_best_seller": is_best_seller,
         "is_active": is_active,
-        "images": images_list
+        "images": images_list,
+        "video_url": video_url
     }
     
     await db.products.update_one({"id": product_id}, {"$set": update_data})
@@ -928,6 +1204,57 @@ async def update_product(
 async def delete_product(product_id: str, current_user: dict = Depends(get_current_admin)):
     await db.products.delete_one({"id": product_id})
     return {"message": "Product deleted"}
+
+
+@api_router.get("/products/{product_id}/reviews")
+async def get_product_reviews(product_id: str):
+    reviews = await db.reviews.find({"product_id": product_id}, {"_id": 0}).sort("created_at", -1).to_list(100)
+    for r in reviews:
+        if isinstance(r.get("created_at"), str):
+            r["created_at"] = datetime.fromisoformat(r["created_at"])
+    
+    avg_rating = 0.0
+    if reviews:
+        avg_rating = round(sum(r["rating"] for r in reviews) / len(reviews), 1)
+    
+    return {
+        "reviews": reviews,
+        "total": len(reviews),
+        "average_rating": avg_rating
+    }
+
+
+@api_router.post("/products/{product_id}/reviews")
+async def add_product_review(
+    product_id: str,
+    review_data: ReviewCreate,
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(HTTPBearer(auto_error=False))
+):
+    user_id = None
+    user_name = review_data.user_name.strip() if review_data.user_name else "Verified Buyer"
+    
+    if credentials:
+        try:
+            payload = jwt.decode(credentials.credentials, SECRET_KEY, algorithms=[ALGORITHM])
+            uid = payload.get("sub")
+            user = await get_user_from_db(uid)
+            if user:
+                user_id = user.get("id")
+                user_name = user.get("full_name") or user_name
+        except Exception:
+            pass
+
+    review = Review(
+        product_id=product_id,
+        user_id=user_id,
+        user_name=user_name,
+        rating=review_data.rating,
+        comment=review_data.comment.strip()
+    )
+    doc = review.model_dump()
+    doc["created_at"] = doc["created_at"].isoformat()
+    await db.reviews.insert_one(doc)
+    return review
 
 
 @api_router.get("/cart")
@@ -1025,23 +1352,20 @@ async def remove_from_cart(product_id: str, size: str, current_user: dict = Depe
 
 @api_router.post("/orders")
 async def create_order(order_data: OrderCreate, current_user: dict = Depends(get_current_user)):
-    user = await db.users.find_one({"id": current_user["id"]}, {"_id": 0})
+    user = await get_user_from_db(current_user["id"])
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     
-    order = Order(
-        user_id=current_user["id"],
-        customer_name=user["full_name"],
-        customer_email=user["email"],
-        customer_mobile=user["mobile"],
-        delivery_address=order_data.delivery_address or user["address"],
-        items=order_data.items,
-        total_amount=order_data.total_amount
-    )
-    
+    enriched_items = []
     for item in order_data.items:
         product = await db.products.find_one({"id": item.product_id}, {"_id": 0})
         if product:
+            if not item.color:
+                item.color = product.get("color", "")
+            if not item.image_url:
+                images = product.get("images") or []
+                item.image_url = images[0] if images else ""
+
             # Deduct from specific size if available
             size_quantities = product.get("size_quantities") or {}
             if item.size in size_quantities and size_quantities[item.size] >= item.quantity:
@@ -1061,6 +1385,17 @@ async def create_order(order_data: OrderCreate, current_user: dict = Depends(get
                     {"id": item.product_id},
                     {"$set": {"quantity": new_quantity}}
                 )
+        enriched_items.append(item)
+
+    order = Order(
+        user_id=current_user["id"],
+        customer_name=user["full_name"],
+        customer_email=user["email"],
+        customer_mobile=user["mobile"],
+        delivery_address=order_data.delivery_address or user["address"],
+        items=enriched_items,
+        total_amount=order_data.total_amount
+    )
     
     doc = order.model_dump()
     doc['created_at'] = doc['created_at'].isoformat()
@@ -1178,7 +1513,19 @@ async def verify_payment(
             'razorpay_signature': razorpay_signature
         }
         rzp_client.utility.verify_payment_signature(params_dict)
-        
+
+        # SECURITY: Verify the order belongs to the authenticated user
+        existing_order = await db.orders.find_one({"id": order_id})
+        if not existing_order:
+            raise HTTPException(status_code=404, detail="Order not found")
+        if existing_order.get("user_id") != current_user["id"]:
+            logger.warning(f"SECURITY ALERT: User {current_user['id']} attempted to verify payment for order {order_id} belonging to user {existing_order.get('user_id')}")
+            raise HTTPException(status_code=403, detail="You are not authorized to verify this order")
+
+        # SECURITY: Prevent double-payment on already paid orders
+        if existing_order.get("status") == "Paid":
+            return {"status": "success", "message": "Order already paid"}
+
         # Update order status
         await db.orders.update_one(
             {"id": order_id},
@@ -1244,7 +1591,7 @@ async def get_all_customers(current_user: dict = Depends(get_current_admin)):
 
 @api_router.get("/admin/inventory")
 async def get_inventory(current_user: dict = Depends(get_current_admin)):
-    products = await db.products.find({}, {"_id": 0}).to_list(1000)
+    products = await db.products.find({}, {"_id": 0}).sort("created_at", -1).to_list(1000)
     
     for product in products:
         if isinstance(product.get('created_at'), str):
@@ -1287,7 +1634,10 @@ async def get_content(page_id: str):
     if not content:
         return {"id": page_id, "content": "", "updated_at": datetime.now(timezone.utc).isoformat()}
     if isinstance(content.get('updated_at'), str):
-        content['updated_at'] = datetime.fromisoformat(content['updated_at'])
+        try:
+            content['updated_at'] = datetime.fromisoformat(content['updated_at'])
+        except Exception:
+            pass
     return content
 
 
@@ -1337,10 +1687,12 @@ async def update_content(page_id: str, content_data: ContentUpdate, current_user
 
 @api_router.get("/profile")
 async def get_profile(current_user: dict = Depends(get_current_user)):
-    user = await db.users.find_one({"id": current_user["id"]}, {"_id": 0, "password_hash": 0})
+    user = await get_user_from_db(current_user["id"])
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     
+    user.pop("password_hash", None)
+    user.pop("_id", None)
     if isinstance(user.get('created_at'), str):
         user['created_at'] = datetime.fromisoformat(user['created_at'])
     
@@ -1351,12 +1703,19 @@ async def get_profile(current_user: dict = Depends(get_current_user)):
 async def update_profile(
     full_name: str = Form(...),
     mobile: str = Form(...),
-    address: str = Form(...),
+    address: str = Form(""),
     current_user: dict = Depends(get_current_user)
 ):
+    user = await get_user_from_db(current_user["id"])
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+        
+    update_fields = {"full_name": full_name, "mobile": mobile}
+    if address:  # Only update legacy address field if provided
+        update_fields["address"] = address
     await db.users.update_one(
-        {"id": current_user["id"]},
-        {"$set": {"full_name": full_name, "mobile": mobile, "address": address}}
+        {"_id": user["_id"]},
+        {"$set": update_fields}
     )
     return {"message": "Profile updated"}
 
@@ -1386,17 +1745,22 @@ app.add_middleware(
 
 @app.on_event("startup")
 async def startup_db():
-    # Use vsfashiiiion@gmail.com as the default admin
-    admin_email = "vsfashiiiion@gmail.com"
+    # SECURITY: Admin email and password read from environment variables only.
+    # Never hardcode admin credentials in source code.
+    admin_email = os.environ.get("ADMIN_EMAIL", "vsfashiiiion@gmail.com")
+    admin_password = os.environ.get("ADMIN_PASSWORD", "")
     admin = await db.admins.find_one({"email": admin_email})
-    
+
     if not admin:
-        admin_obj = Admin(
-            email=admin_email,
-            password_hash=hash_password("vs@54321")
-        )
-        await db.admins.insert_one(admin_obj.model_dump())
-        logger.info(f"Default admin account created: {admin_email}")
+        if not admin_password:
+            logger.warning("SECURITY WARNING: ADMIN_PASSWORD env var not set. Admin account NOT created. Set ADMIN_PASSWORD in .env to enable admin login.")
+        else:
+            admin_obj = Admin(
+                email=admin_email,
+                password_hash=hash_password(admin_password)
+            )
+            await db.admins.insert_one(admin_obj.model_dump())
+            logger.info(f"Default admin account created: {admin_email}")
     else:
         updates = {}
         # Self-healing: ensure existing admin has an 'id' field
@@ -1404,10 +1768,10 @@ async def startup_db():
             new_id = str(uuid.uuid4())
             updates["id"] = new_id
             logger.info(f"Updated existing admin {admin_email} with missing ID: {new_id}")
-        # Self-healing: ensure existing admin has a 'password_hash' field
-        if not admin.get("password_hash"):
-            updates["password_hash"] = hash_password("vs@54321")
-            logger.info(f"Repaired missing password_hash for admin: {admin_email}")
+        # Self-healing: re-hash password if ADMIN_PASSWORD env var updated
+        if admin_password and not bcrypt.checkpw(admin_password.encode(), admin.get("password_hash", "").encode()):
+            updates["password_hash"] = hash_password(admin_password)
+            logger.info(f"Admin password updated from ADMIN_PASSWORD env var for: {admin_email}")
         if updates:
             await db.admins.update_one({"_id": admin["_id"]}, {"$set": updates})
 

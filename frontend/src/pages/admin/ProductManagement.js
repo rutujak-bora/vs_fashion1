@@ -8,7 +8,8 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Plus, Pencil, Trash2, Upload } from 'lucide-react';
+import { Plus, Pencil, Trash2, Upload, Layers } from 'lucide-react';
+import BulkProductUploadModal from './BulkProductUploadModal';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || '';
 const API = `${BACKEND_URL}/api`;
@@ -19,6 +20,7 @@ export default function ProductManagement() {
   const [collections, setCollections] = useState([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [bulkDialogOpen, setBulkDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [formData, setFormData] = useState({
@@ -35,6 +37,7 @@ export default function ProductManagement() {
     is_new_arrival: false,
     is_best_seller: false,
     images: [],
+    video_url: '',
     size_quantities: {}
   });
 
@@ -216,6 +219,7 @@ export default function ProductManagement() {
       form.append('is_new_arrival', formData.is_new_arrival);
       form.append('is_best_seller', formData.is_best_seller);
       form.append('images', JSON.stringify(formData.images));
+      form.append('video_url', formData.video_url || '');
 
       if (editingId) {
         form.append('is_active', true);
@@ -254,6 +258,7 @@ export default function ProductManagement() {
       is_new_arrival: product.is_new_arrival,
       is_best_seller: product.is_best_seller,
       images: product.images || [],
+      video_url: product.video_url || '',
       size_quantities: product.size_quantities || {}
     });
     setDialogOpen(true);
@@ -288,6 +293,7 @@ export default function ProductManagement() {
       is_new_arrival: false,
       is_best_seller: false,
       images: [],
+      video_url: '',
       size_quantities: {}
     });
     setEditingId(null);
@@ -303,16 +309,25 @@ export default function ProductManagement() {
         <h1 className="text-3xl font-bold" style={{ fontFamily: 'Playfair Display' }}>
           Product Management
         </h1>
-        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-          <DialogTrigger asChild>
-            <Button
-              data-testid="add-product-btn"
-              onClick={resetForm}
-              className="bg-[#4A2836] hover:bg-[#5A3846] flex items-center gap-2"
-            >
-              <Plus size={16} /> Add Product
-            </Button>
-          </DialogTrigger>
+        <div className="flex items-center gap-3">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => setBulkDialogOpen(true)}
+            className="border-[#4A2836] text-[#4A2836] hover:bg-[#4A2836]/10 flex items-center gap-2 font-medium"
+          >
+            <Layers size={16} /> Bulk Upload
+          </Button>
+          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+            <DialogTrigger asChild>
+              <Button
+                data-testid="add-product-btn"
+                onClick={resetForm}
+                className="bg-[#4A2836] hover:bg-[#5A3846] flex items-center gap-2"
+              >
+                <Plus size={16} /> Add Product
+              </Button>
+            </DialogTrigger>
           <DialogContent className="bg-white max-w-2xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>{editingId ? 'Edit Product' : 'Add New Product'}</DialogTitle>
@@ -512,6 +527,18 @@ export default function ProductManagement() {
                 )}
               </div>
 
+              <div>
+                <Label htmlFor="video_url">Video Clip URL (Optional — For Reels & Video Showcase)</Label>
+                <Input
+                  id="video_url"
+                  placeholder="https://... (MP4 video link or S3 link)"
+                  value={formData.video_url || ''}
+                  onChange={(e) => setFormData({ ...formData, video_url: e.target.value })}
+                  className="mt-1"
+                />
+                <p className="text-[11px] text-gray-400 mt-1">Short 10-15s vertical clip showing fabric flare and movement.</p>
+              </div>
+
               <div className="flex gap-4">
                 <div className="flex items-center gap-2">
                   <input
@@ -555,7 +582,16 @@ export default function ProductManagement() {
             </form>
           </DialogContent>
         </Dialog>
+        </div>
       </div>
+
+      <BulkProductUploadModal
+        open={bulkDialogOpen}
+        onOpenChange={setBulkDialogOpen}
+        collections={collections}
+        token={token}
+        onSuccess={fetchData}
+      />
 
       <div className="bg-white border border-gray-200">
         <div className="overflow-x-auto">
