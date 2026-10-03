@@ -49,31 +49,39 @@ export default function Checkout() {
     }, 0);
   };
 
+  const isMaharashtraAddress = (address) => {
+    if (!address) return false;
+    const lowerState = address.state?.toLowerCase().trim() || '';
+    const lowerCity = address.city?.toLowerCase().trim() || '';
+    const lowerAddrLine = address.address_line?.toLowerCase().trim() || '';
+    const pincodeStr = String(address.pincode || '').trim();
+
+    // 1. Check pincode starts with Maharashtra postal codes (40-44)
+    if (/^(40|41|42|43|44)/.test(pincodeStr)) return true;
+
+    // 2. Check state field
+    if (lowerState.includes('maharashtra') || lowerState === 'mh') return true;
+
+    // 3. Check combined address text
+    const fullAddr = `${lowerState} ${lowerCity} ${lowerAddrLine} ${pincodeStr}`;
+    if (fullAddr.includes('maharashtra') || /\b(40|41|42|43|44)\d{4}\b/.test(fullAddr)) {
+      return true;
+    }
+
+    // Common Maharashtra cities
+    const mhCities = ['pune', 'mumbai', 'nagpur', 'nashik', 'thane', 'aurangabad', 'chhatrapati sambhajinagar', 'solapur', 'kolhapur', 'amravati', 'navi mumbai', 'jalgaon', 'akola', 'latur', 'dhule', 'ahmednagar', 'satara', 'sangli'];
+    if (mhCities.some(city => lowerCity.includes(city) || lowerAddrLine.includes(city))) {
+      return true;
+    }
+
+    return false;
+  };
+
   const calculateShipping = (items, address) => {
-    if (!address) return 0;
+    if (!address || items.length === 0) return 0;
     
-    let isMaharashtra = false;
-    const lowerState = address.state?.toLowerCase() || '';
-    const lowerAddrLine = address.address_line?.toLowerCase() || '';
-    const pincode = address.pincode || '';
-    
-    const pincodeStr = String(pincode).trim();
-    
-    // Check for Maharashtra pincodes (40-44) or state name
-    if (pincodeStr.startsWith('40') || pincodeStr.startsWith('41') || pincodeStr.startsWith('42') || pincodeStr.startsWith('43') || pincodeStr.startsWith('44') || 
-        lowerState.includes('maharashtra') || lowerAddrLine.includes('maharashtra')) {
-      isMaharashtra = true;
-    }
-
-    // Additional fallback: check if any field contains a Maharashtra pincode pattern
-    if (!isMaharashtra) {
-      const fullAddr = `${lowerState} ${lowerAddrLine} ${pincodeStr}`;
-      if (/\b(40|41|42|43|44)\d{4}\b/.test(fullAddr)) {
-        isMaharashtra = true;
-      }
-    }
-
-    if (isMaharashtra) {
+    const isMH = isMaharashtraAddress(address);
+    if (isMH) {
       const totalQuantity = items.reduce((sum, item) => sum + item.quantity, 0);
       return totalQuantity * 80;
     } else {
@@ -138,7 +146,7 @@ export default function Checkout() {
 
       // 2. Open Razorpay Checkout
       const options = {
-        key: process.env.REACT_APP_RAZORPAY_KEY_ID || 'rzp_test_Sm3FUWDSurPgJt',
+        key: process.env.REACT_APP_RAZORPAY_KEY_ID || 'rzp_live_TTuWc4WTaHHPT0',
         amount: rzpOrder.amount,
         currency: rzpOrder.currency,
         name: "VS Fashion",
@@ -234,9 +242,51 @@ export default function Checkout() {
     }
   };
 
+  const [couponInput, setCouponInput] = useState('');
+  const [appliedCoupon, setAppliedCoupon] = useState(null);
+  const [discountAmount, setDiscountAmount] = useState(0);
+
+  const handleApplyCoupon = () => {
+    const code = couponInput.trim().toUpperCase();
+    const subtotal = calculateTotal();
+    
+    if (code === 'WELCOME10') {
+      const discount = subtotal * 0.10;
+      setAppliedCoupon({ code: 'WELCOME10', description: '10% OFF Welcome Discount' });
+      setDiscountAmount(discount);
+      toast.success('Coupon "WELCOME10" applied! 10% discount subtracted.');
+    } else if (code === 'FESTIVE200') {
+      if (subtotal < 999) {
+        toast.error('FESTIVE200 requires a minimum order of ₹999.');
+        return;
+      }
+      setAppliedCoupon({ code: 'FESTIVE200', description: 'Flat ₹200 OFF Festive Special' });
+      setDiscountAmount(200);
+      toast.success('Coupon "FESTIVE200" applied! ₹200 discount subtracted.');
+    } else if (code === 'VSFASHION15') {
+      const discount = subtotal * 0.15;
+      setAppliedCoupon({ code: 'VSFASHION15', description: '15% OFF VS Fashion Special' });
+      setDiscountAmount(discount);
+      toast.success('Coupon "VSFASHION15" applied! 15% discount subtracted.');
+    } else {
+      toast.error('Invalid coupon code. Try WELCOME10 or FESTIVE200');
+    }
+  };
+
+  const handleRemoveCoupon = () => {
+    setAppliedCoupon(null);
+    setDiscountAmount(0);
+    setCouponInput('');
+    toast.info('Coupon removed');
+  };
+
   if (loading) {
     return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
   }
+
+  const subtotal = calculateTotal();
+  const shipping = calculateShipping(cartItems, selectedAddress);
+  const finalTotal = Math.max(0, subtotal - discountAmount) + shipping;
 
   return (
     <div className="py-24 px-6 md:px-12 max-w-4xl mx-auto">
@@ -326,24 +376,65 @@ export default function Checkout() {
             </Button>
           </div>
         )}
-        <div className="flex justify-between pt-4 text-sm">
+
+        {/* Promo Coupon Section */}
+        <div className="my-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
+          <p className="text-xs font-semibold uppercase tracking-wider text-gray-700 mb-2">Have a Promo Coupon?</p>
+          {appliedCoupon ? (
+            <div className="flex items-center justify-between bg-green-50 border border-green-200 p-3 rounded text-xs">
+              <div>
+                <span className="font-bold text-green-700">{appliedCoupon.code}</span>
+                <p className="text-green-600 text-[11px]">{appliedCoupon.description}</p>
+              </div>
+              <button onClick={handleRemoveCoupon} className="text-red-500 hover:text-red-700 font-semibold text-xs ml-2">
+                Remove
+              </button>
+            </div>
+          ) : (
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={couponInput}
+                onChange={(e) => setCouponInput(e.target.value)}
+                placeholder="Enter coupon (e.g. WELCOME10)"
+                className="flex-1 bg-white border border-gray-300 rounded px-3 py-1.5 text-xs focus:outline-none focus:border-[#8B1B4A] uppercase"
+              />
+              <Button onClick={handleApplyCoupon} className="bg-[#8B1B4A] hover:bg-[#A4305E] text-white text-xs px-4">
+                Apply
+              </Button>
+            </div>
+          )}
+          <p className="text-[10px] text-gray-400 mt-2">Available codes: <span className="font-bold text-gray-600">WELCOME10</span> (10% OFF), <span className="font-bold text-gray-600">FESTIVE200</span> (₹200 OFF)</p>
+        </div>
+
+        <div className="flex justify-between pt-2 text-sm">
           <span>Quantity</span>
           <span>{cartItems.reduce((sum, item) => sum + item.quantity, 0)}</span>
         </div>
         <div className="flex justify-between pt-2 text-sm">
           <span>Product Amount</span>
-          <span>₹{calculateTotal().toFixed(2)}</span>
+          <span>₹{subtotal.toFixed(2)}</span>
         </div>
+        {discountAmount > 0 && (
+          <div className="flex justify-between pt-2 text-sm text-green-600 font-medium">
+            <span>Coupon Discount</span>
+            <span>-₹{discountAmount.toFixed(2)}</span>
+          </div>
+        )}
         <div className="flex justify-between pt-2 text-sm">
           <span>Shipping Charges</span>
-          <span>₹{calculateShipping(cartItems, selectedAddress).toFixed(2)}</span>
+          <span>₹{shipping.toFixed(2)}</span>
         </div>
-        {selectedAddress && !(selectedAddress.state?.toLowerCase().includes('maharashtra')) && (
-          <p className="text-xs text-gray-500 mt-1 italic">Note: Shipping outside Maharashtra is calculated at ₹220 per kg</p>
+        {selectedAddress && (
+          isMaharashtraAddress(selectedAddress) ? (
+            <p className="text-xs text-green-700 mt-1 italic font-medium">Maharashtra Delivery: ₹80 per item</p>
+          ) : (
+            <p className="text-xs text-gray-500 mt-1 italic">Note: Shipping outside Maharashtra is calculated at ₹220 per kg</p>
+          )
         )}
         <div className="flex justify-between pt-4 text-lg font-bold border-t border-gray-200 mt-4">
           <span>Final Total</span>
-          <span data-testid="checkout-total">₹{(calculateTotal() + calculateShipping(cartItems, selectedAddress)).toFixed(2)}</span>
+          <span data-testid="checkout-total">₹{finalTotal.toFixed(2)}</span>
         </div>
       </div>
 

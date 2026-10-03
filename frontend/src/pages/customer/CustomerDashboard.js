@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { toast } from 'sonner';
 import useStore from '@/store/useStore';
@@ -8,16 +9,18 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
-import { Home, Briefcase, MapPin, Trash2, Plus, CheckCircle } from 'lucide-react';
+import { Home, Briefcase, MapPin, Trash2, Plus, Pencil } from 'lucide-react';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || '';
 const API = `${BACKEND_URL}/api`;
 
 function AddressManager() {
-  const { token } = useStore();
+  const { token, logout } = useStore();
+  const navigate = useNavigate();
   const [addresses, setAddresses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
+  const [editingId, setEditingId] = useState(null);
   const [newAddr, setNewAddr] = useState({
     label: 'Home',
     full_name: '',
@@ -38,9 +41,14 @@ function AddressManager() {
       const response = await axios.get(`${API}/user/addresses`, {
         headers: { Authorization: `Bearer ${token}` }
       });
-      setAddresses(response.data);
+      setAddresses(response.data || []);
     } catch (error) {
       console.error('Error fetching addresses:', error);
+      if (error.response?.status === 401) {
+        toast.error('Session expired. Please log in again.');
+        logout();
+        navigate('/login');
+      }
     } finally {
       setLoading(false);
     }
@@ -49,11 +57,19 @@ function AddressManager() {
   const handleAddAddress = async (e) => {
     e.preventDefault();
     try {
-      await axios.post(`${API}/user/addresses`, newAddr, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      toast.success('Address added successfully');
+      if (editingId) {
+        await axios.put(`${API}/user/addresses/${editingId}`, newAddr, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        toast.success('Address updated successfully');
+      } else {
+        await axios.post(`${API}/user/addresses`, newAddr, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        toast.success('Address added successfully');
+      }
       setShowAdd(false);
+      setEditingId(null);
       fetchAddresses();
       setNewAddr({
         label: 'Home',
@@ -66,8 +82,35 @@ function AddressManager() {
         is_default: false
       });
     } catch (error) {
-      toast.error('Failed to add address');
+      const detail = error.response?.data?.detail;
+      let message = editingId ? 'Failed to update address' : 'Failed to add address';
+      if (Array.isArray(detail)) {
+        message = detail.map(d => `${d.loc?.join('.') || ''}: ${d.msg}`).join(', ');
+      } else if (typeof detail === 'string') {
+        message = detail;
+      }
+      toast.error(message);
+      if (error.response?.status === 401) {
+        toast.error('Session expired. Please log in again.');
+        logout();
+        navigate('/login');
+      }
     }
+  };
+
+  const handleEdit = (addr) => {
+    setNewAddr({
+      label: addr.label,
+      full_name: addr.full_name,
+      mobile: addr.mobile,
+      address_line: addr.address_line,
+      city: addr.city,
+      state: addr.state,
+      pincode: addr.pincode,
+      is_default: addr.is_default
+    });
+    setEditingId(addr.id);
+    setShowAdd(true);
   };
 
   const handleDelete = async (id) => {
@@ -79,7 +122,8 @@ function AddressManager() {
       toast.success('Address deleted');
       fetchAddresses();
     } catch (error) {
-      toast.error('Failed to delete address');
+      const detail = error.response?.data?.detail;
+      toast.error(typeof detail === 'string' ? detail : 'Failed to delete address');
     }
   };
 
@@ -91,7 +135,8 @@ function AddressManager() {
       toast.success('Default address updated');
       fetchAddresses();
     } catch (error) {
-      toast.error('Failed to update default address');
+      const detail = error.response?.data?.detail;
+      toast.error(typeof detail === 'string' ? detail : 'Failed to update default address');
     }
   };
 
@@ -102,7 +147,7 @@ function AddressManager() {
       <div className="flex justify-between items-center">
         <h2 className="text-2xl" style={{ fontFamily: 'Playfair Display' }}>Address Book</h2>
         <Button 
-          onClick={() => setShowAdd(!showAdd)}
+          onClick={() => { setShowAdd(!showAdd); setEditingId(null); }}
           className="bg-[#1A1A1A] hover:bg-[#2A2A2A] gap-2"
         >
           {showAdd ? 'Cancel' : <><Plus size={16} /> Add New Address</>}
@@ -202,7 +247,9 @@ function AddressManager() {
             />
             <Label htmlFor="is_default">Set as default address</Label>
           </div>
-          <Button type="submit" className="w-full bg-[#C4969C] hover:bg-[#B4848F]">Save Address</Button>
+          <Button type="submit" className="w-full bg-[#C4969C] hover:bg-[#B4848F]">
+            {editingId ? 'Update Address' : 'Save Address'}
+          </Button>
         </form>
       )}
 
@@ -226,12 +273,20 @@ function AddressManager() {
             </p>
             
             <div className="flex justify-between items-center border-t pt-4">
-              <button 
-                onClick={() => handleDelete(addr.id)}
-                className="text-gray-400 hover:text-red-500 transition-colors"
-              >
-                <Trash2 size={16} />
-              </button>
+              <div className="flex gap-4">
+                <button 
+                  onClick={() => handleDelete(addr.id)}
+                  className="text-gray-400 hover:text-red-500 transition-colors"
+                >
+                  <Trash2 size={16} />
+                </button>
+                <button 
+                  onClick={() => handleEdit(addr)}
+                  className="text-gray-400 hover:text-black transition-colors"
+                >
+                  <Pencil size={16} />
+                </button>
+              </div>
               {!addr.is_default && (
                 <button 
                   onClick={() => handleSetDefault(addr.id)}
@@ -249,7 +304,8 @@ function AddressManager() {
 }
 
 export default function CustomerDashboard() {
-  const { token, user } = useStore();
+  const { token, user, logout } = useStore();
+  const navigate = useNavigate();
   const [profile, setProfile] = useState(null);
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -276,9 +332,14 @@ export default function CustomerDashboard() {
         mobile: profileRes.data.mobile,
         address: profileRes.data.address
       });
-      setOrders(ordersRes.data);
+      setOrders(ordersRes.data || []);
     } catch (error) {
       console.error('Error fetching data:', error);
+      if (error.response?.status === 401) {
+        toast.error('Session expired. Please log in again.');
+        logout();
+        navigate('/login');
+      }
     } finally {
       setLoading(false);
     }
@@ -290,7 +351,7 @@ export default function CustomerDashboard() {
       const form = new FormData();
       form.append('full_name', formData.full_name);
       form.append('mobile', formData.mobile);
-      form.append('address', formData.address);
+      // Note: address field is optional on backend; addresses are managed via Address Book tab
 
       await axios.put(`${API}/profile`, form, {
         headers: { Authorization: `Bearer ${token}` }
@@ -300,7 +361,14 @@ export default function CustomerDashboard() {
       setEditing(false);
       fetchData();
     } catch (error) {
-      toast.error('Failed to update profile');
+      const detail = error.response?.data?.detail;
+      let message = 'Failed to update profile';
+      if (Array.isArray(detail)) {
+        message = detail.map(d => `${d.loc?.join('.') || ''}: ${d.msg}`).join(', ');
+      } else if (typeof detail === 'string') {
+        message = detail;
+      }
+      toast.error(message);
     }
   };
 
@@ -344,13 +412,27 @@ export default function CustomerDashboard() {
                       {order.status}
                     </span>
                   </div>
-                  <div className="space-y-2 mb-4">
-                    {order.items.map((item, index) => (
-                      <div key={index} className="flex justify-between text-sm">
-                        <span>{item.product_name} (Size: {item.size}, Qty: {item.quantity})</span>
-                        <span>₹{(item.price * item.quantity).toFixed(2)}</span>
-                      </div>
-                    ))}
+                  <div className="space-y-3 mb-4">
+                    {order.items.map((item, index) => {
+                      const imgUrl = item.image_url
+                        ? (item.image_url.startsWith('http') ? item.image_url : `${BACKEND_URL}${item.image_url}`)
+                        : 'https://via.placeholder.com/60x80';
+                      return (
+                        <div key={index} className="flex justify-between items-center text-sm py-1 border-b border-gray-100 last:border-0">
+                          <div className="flex items-center gap-3">
+                            <img src={imgUrl} alt={item.product_name} className="w-10 h-14 object-cover rounded border border-gray-200" />
+                            <div>
+                              <p className="font-medium text-gray-800">{item.product_name}</p>
+                              <p className="text-xs text-gray-500">
+                                {item.color && <span className="mr-2">Color: <strong>{item.color}</strong> |</span>}
+                                Size: <strong>{item.size}</strong> | Qty: <strong>{item.quantity}</strong>
+                              </p>
+                            </div>
+                          </div>
+                          <span className="font-semibold text-gray-900">₹{(item.price * item.quantity).toFixed(2)}</span>
+                        </div>
+                      );
+                    })}
                   </div>
                   <div className="border-t border-gray-200 pt-4 flex justify-between font-bold">
                     <span>Total Amount</span>

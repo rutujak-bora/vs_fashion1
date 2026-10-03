@@ -182,8 +182,9 @@ export default function CollectionManagement() {
                     value={formData.image_url}
                     onChange={(e) => setFormData({ ...formData, image_url: e.target.value })}
                     className="flex-1"
+                    placeholder="https://..."
                   />
-                  <label className="bg-gray-100 p-2 rounded cursor-pointer hover:bg-gray-200 border">
+                  <label className="bg-gray-100 p-2 rounded cursor-pointer hover:bg-gray-200 border flex items-center justify-center">
                     <input
                       type="file"
                       accept="image/*"
@@ -194,6 +195,12 @@ export default function CollectionManagement() {
                     <Upload size={20} className="text-gray-500" />
                   </label>
                 </div>
+                {formData.image_url && (
+                  <div className="mt-2 flex items-center gap-2">
+                    <img src={formData.image_url} alt="Preview" className="w-16 h-20 object-cover rounded border" />
+                    <span className="text-xs text-gray-500">Collection Image Preview</span>
+                  </div>
+                )}
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="flex items-center gap-2">
@@ -227,9 +234,9 @@ export default function CollectionManagement() {
                       value={formData.home_image_url}
                       onChange={(e) => setFormData({ ...formData, home_image_url: e.target.value })}
                       className="flex-1"
-                      placeholder="Image for home page (8 collections grid)"
+                      placeholder="Image for home page (Shop By Style grid)"
                     />
-                    <label className="bg-gray-100 p-2 rounded cursor-pointer hover:bg-gray-200 border">
+                    <label className="bg-gray-100 p-2 rounded cursor-pointer hover:bg-gray-200 border flex items-center justify-center">
                       <input
                         type="file"
                         accept="image/*"
@@ -241,6 +248,12 @@ export default function CollectionManagement() {
                     </label>
                   </div>
                   {uploading && <p className="text-xs text-gray-500 mt-1">Uploading...</p>}
+                  {formData.home_image_url && (
+                    <div className="mt-2 flex items-center gap-2">
+                      <img src={formData.home_image_url} alt="Home Preview" className="w-16 h-20 object-cover rounded border" />
+                      <span className="text-xs text-gray-500">Home Grid Preview</span>
+                    </div>
+                  )}
                 </div>
               )}
               <Button
@@ -260,6 +273,7 @@ export default function CollectionManagement() {
           <table className="w-full">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Photo</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Description</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
@@ -269,49 +283,65 @@ export default function CollectionManagement() {
             </thead>
             <tbody className="divide-y divide-gray-200">
               {collections.length > 0 ? (
-                collections.map((collection) => (
-                  <tr key={collection.id} data-testid={`collection-row-${collection.id}`}>
-                    <td className="px-6 py-4 whitespace-nowrap">{collection.name}</td>
-                    <td className="px-6 py-4">{collection.description || '-'}</td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className={`px-2 py-1 text-xs rounded ${
-                        collection.is_active ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
-                      }`}>
-                        {collection.is_active ? 'Active' : 'Inactive'}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      {collection.show_on_home ? (
-                        <span className="px-2 py-1 text-xs rounded bg-purple-100 text-purple-800">
-                          Yes
+                collections.map((collection) => {
+                  const displayImg = collection.home_image_url || collection.image_url;
+                  return (
+                    <tr key={collection.id} data-testid={`collection-row-${collection.id}`}>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        {displayImg ? (
+                          <img 
+                            src={displayImg} 
+                            alt={collection.name} 
+                            className="w-12 h-14 object-cover rounded shadow-sm border border-gray-200" 
+                          />
+                        ) : (
+                          <div className="w-12 h-14 bg-gray-100 rounded border border-gray-200 flex items-center justify-center text-xs text-gray-400 font-semibold">
+                            No Img
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap font-medium text-gray-900">{collection.name}</td>
+                      <td className="px-6 py-4 text-gray-500 text-sm max-w-xs truncate">{collection.description || '-'}</td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <span className={`px-2 py-1 text-xs rounded ${
+                          collection.is_active ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
+                        }`}>
+                          {collection.is_active ? 'Active' : 'Inactive'}
                         </span>
-                      ) : (
-                        <span className="px-2 py-1 text-xs rounded bg-gray-100 text-gray-800">
-                          No
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-right">
-                      <button
-                        data-testid={`edit-collection-${collection.id}`}
-                        onClick={() => handleEdit(collection)}
-                        className="text-blue-600 hover:text-blue-800 mr-3"
-                      >
-                        <Pencil size={16} />
-                      </button>
-                      <button
-                        data-testid={`delete-collection-${collection.id}`}
-                        onClick={() => handleDelete(collection.id)}
-                        className="text-red-600 hover:text-red-800"
-                      >
-                        <Trash2 size={16} />
-                      </button>
-                    </td>
-                  </tr>
-                ))
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        {collection.show_on_home ? (
+                          <span className="px-2 py-1 text-xs rounded bg-purple-100 text-purple-800">
+                            Yes
+                          </span>
+                        ) : (
+                          <span className="px-2 py-1 text-xs rounded bg-gray-100 text-gray-800">
+                            No
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-right">
+                        <button
+                          data-testid={`edit-collection-${collection.id}`}
+                          onClick={() => handleEdit(collection)}
+                          className="text-blue-600 hover:text-blue-800 mr-3"
+                        >
+                          <Pencil size={16} />
+                        </button>
+                        <button
+                          data-testid={`delete-collection-${collection.id}`}
+                          onClick={() => handleDelete(collection.id)}
+                          className="text-red-600 hover:text-red-800"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })
               ) : (
                 <tr>
-                  <td colSpan="4" className="px-6 py-8 text-center text-gray-500">
+                  <td colSpan="6" className="px-6 py-8 text-center text-gray-500">
                     No collections yet. Create your first collection!
                   </td>
                 </tr>

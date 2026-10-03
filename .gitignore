@@ -80,7 +80,21 @@ agenthub/agents/youtube/db
 # Mobile development
 android-sdk/ frontend/node_modules/.cache/default-development/0.pack
 frontend/node_modules/.cache/default-development/0.pack
--e 
-# Environment files
+# Environment files - NEVER commit these to Git!
+# They contain secrets like DB passwords, API keys, etc.
 *.env
 *.env.*
+.env
+.env.local
+.env.development
+.env.production
+backend/.env
+frontend/.env
+
+# Scratch and test files
+backend/scratch/
+backend/test_compressor.py
+deploy_changes.ps1
+cutout.png
+sample_pink_bg.jpg
+test_img.jpg

@@ -162,17 +162,31 @@ export default function OrderManagement() {
               <div>
                 <h3 className="font-bold mb-2">Order Items</h3>
                 <div className="border border-gray-200 rounded">
-                  {selectedOrder.items.map((item, index) => (
-                    <div key={index} className="p-3 border-b border-gray-200 last:border-0">
-                      <div className="flex justify-between">
-                        <div>
-                          <p className="font-medium">{item.product_name}</p>
-                          <p className="text-sm text-gray-600">Size: {item.size} | Qty: {item.quantity}</p>
+                  {selectedOrder.items.map((item, index) => {
+                    const imgUrl = item.image_url
+                      ? (item.image_url.startsWith('http') ? item.image_url : `${BACKEND_URL}${item.image_url}`)
+                      : 'https://via.placeholder.com/60x80';
+                    return (
+                      <div key={index} className="p-3 border-b border-gray-200 last:border-0 flex items-center justify-between gap-4">
+                        <div className="flex items-center gap-3">
+                          <img
+                            src={imgUrl}
+                            alt={item.product_name}
+                            className="w-12 h-16 object-cover rounded border border-gray-200"
+                          />
+                          <div>
+                            <p className="font-medium text-sm text-gray-800">{item.product_name}</p>
+                            <div className="flex items-center gap-3 text-xs text-gray-600 mt-1">
+                              {item.color && <span>Color: <strong className="text-gray-800">{item.color}</strong></span>}
+                              <span>Size: <strong className="text-gray-800">{item.size}</strong></span>
+                              <span>Qty: <strong className="text-gray-800">{item.quantity}</strong></span>
+                            </div>
+                          </div>
                         </div>
-                        <p className="font-bold">₹{(item.price * item.quantity).toFixed(2)}</p>
+                        <p className="font-bold text-sm text-gray-900">₹{(item.price * item.quantity).toFixed(2)}</p>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                   <div className="p-3 bg-gray-50 flex justify-between font-bold">
                     <span>Total Amount</span>
                     <span>₹{selectedOrder.total_amount.toFixed(2)}</span>

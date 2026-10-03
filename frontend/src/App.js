@@ -1,7 +1,8 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from '@/components/ui/sonner';
 import useStore from '@/store/useStore';
+import BrandIntro from '@/components/BrandIntro';
 
 import CustomerLayout from '@/layouts/CustomerLayout';
 import AdminLayout from '@/layouts/AdminLayout';
@@ -13,9 +14,11 @@ import BestSellers from '@/pages/customer/BestSellers';
 import CollectionPage from '@/pages/customer/CollectionPage';
 import ProductDetail from '@/pages/customer/ProductDetail';
 import Cart from '@/pages/customer/Cart';
+import Wishlist from '@/pages/customer/Wishlist';
 import Checkout from '@/pages/customer/Checkout';
 import CustomerDashboard from '@/pages/customer/CustomerDashboard';
 import AboutUs from '@/pages/customer/AboutUs';
+import OurServices from '@/pages/customer/OurServices';
 import TermsConditions from '@/pages/customer/TermsConditions';
 import FAQ from '@/pages/customer/FAQ';
 import Register from '@/pages/customer/Register';
@@ -49,8 +52,19 @@ const ProtectedRoute = ({ children, requireAdmin = false }) => {
 };
 
 function App() {
+  const [showIntro, setShowIntro] = useState(() => {
+    // Only show splash screen on the first visit
+    return !localStorage.getItem('vs_brand_intro_seen');
+  });
+
   return (
     <div className="App" style={{ backgroundColor: '#FAFAFA', minHeight: '100vh' }}>
+      {showIntro && (
+        <BrandIntro onComplete={() => {
+          setShowIntro(false);
+          localStorage.setItem('vs_brand_intro_seen', 'true');
+        }} />
+      )}
       <BrowserRouter>
         <ScrollToTop />
         <Routes>
@@ -61,9 +75,12 @@ function App() {
             <Route path="collection/:collectionId" element={<CollectionPage />} />
             <Route path="product/:productId" element={<ProductDetail />} />
             <Route path="cart" element={<Cart />} />
+            <Route path="wishlist" element={<Wishlist />} />
             <Route path="checkout" element={<ProtectedRoute><Checkout /></ProtectedRoute>} />
             <Route path="dashboard" element={<ProtectedRoute><CustomerDashboard /></ProtectedRoute>} />
             <Route path="about" element={<AboutUs />} />
+            <Route path="services" element={<OurServices />} />
+            <Route path="customize-order" element={<OurServices />} />
             <Route path="terms" element={<TermsConditions />} />
             <Route path="privacy" element={<PrivacyPolicy />} />
             <Route path="refund" element={<RefundPolicy />} />

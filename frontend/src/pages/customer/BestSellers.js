@@ -10,6 +10,7 @@ export default function BestSellers() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    document.title = "Best Sellers | Popular Designer Kurtis for Women | VS Fashion";
     fetchProducts();
   }, []);
 

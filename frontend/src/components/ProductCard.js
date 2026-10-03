@@ -1,11 +1,21 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
+import { Heart } from 'lucide-react';
+import useStore from '@/store/useStore';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || '';
 
 export default function ProductCard({ product }) {
   const displayPrice = product.discount_price || product.price;
+  const { wishlist, toggleWishlist } = useStore();
+  const isWishlisted = wishlist?.some(p => p.id === product.id);
+
+  const handleWishlistClick = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    toggleWishlist(product);
+  };
 
   return (
     <motion.div
@@ -14,8 +24,17 @@ export default function ProductCard({ product }) {
       whileInView={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.5 }}
       viewport={{ once: true }}
+      className="relative group"
     >
-      <Link to={`/product/${product.id}`} className="group block">
+      <button
+        onClick={handleWishlistClick}
+        aria-label="Wishlist"
+        className="absolute top-4 right-4 z-20 p-2 rounded-full bg-white/80 backdrop-blur-sm shadow-md hover:bg-white text-gray-700 transition-all transform hover:scale-110"
+      >
+        <Heart size={18} className={isWishlisted ? "fill-[#8B1B4A] text-[#8B1B4A]" : "text-gray-600 hover:text-[#8B1B4A]"} />
+      </button>
+
+      <Link to={`/product/${product.id}`} className="block">
         <div className="relative overflow-hidden bg-gray-100 aspect-[3/4] mb-4 traditional-frame">
           <img
             src={product.images?.[0] 
@@ -26,7 +45,7 @@ export default function ProductCard({ product }) {
             loading="lazy"
           />
           {product.discount_price && (
-            <div className="absolute top-4 right-4 bg-[#C4969C] text-white px-3 py-1 text-xs uppercase tracking-widest">
+            <div className="absolute top-4 left-4 bg-[#C4969C] text-white px-3 py-1 text-xs uppercase tracking-widest">
               Sale
             </div>
           )}
@@ -37,7 +56,7 @@ export default function ProductCard({ product }) {
               </span>
             </div>
           ) : product.quantity < 5 ? (
-            <div className="absolute top-4 left-4 bg-yellow-500 text-white px-3 py-1 text-xs uppercase tracking-widest">
+            <div className="absolute top-12 left-4 bg-yellow-500 text-white px-3 py-1 text-xs uppercase tracking-widest">
               Low Stock
             </div>
           ) : null}

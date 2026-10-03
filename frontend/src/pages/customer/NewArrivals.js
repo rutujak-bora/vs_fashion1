@@ -10,6 +10,7 @@ export default function NewArrivals() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    document.title = "New Arrivals | Latest Designer Kurtis & Ethnic Wear | VS Fashion";
     fetchProducts();
   }, []);
 

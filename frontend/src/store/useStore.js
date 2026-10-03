@@ -8,12 +8,13 @@ const useStore = create(
       token: null,
       isAdmin: false,
       cart: [],
+      wishlist: [],
       
       setUser: (user, token, isAdmin = false) => 
         set({ user, token, isAdmin }),
       
       logout: () => 
-        set({ user: null, token: null, isAdmin: false, cart: [] }),
+        set({ user: null, token: null, isAdmin: false, cart: [], wishlist: [] }),
       
       setCart: (cart) => 
         set({ cart }),
@@ -45,6 +46,23 @@ const useStore = create(
         })),
       
       clearCart: () => set({ cart: [] }),
+
+      // Wishlist Management
+      setWishlist: (wishlist) => set({ wishlist }),
+      
+      toggleWishlist: (product) => set((state) => {
+        const exists = state.wishlist.some(p => p.id === product.id);
+        if (exists) {
+          return { wishlist: state.wishlist.filter(p => p.id !== product.id) };
+        }
+        return { wishlist: [...state.wishlist, product] };
+      }),
+      
+      removeFromWishlist: (productId) => set((state) => ({
+        wishlist: state.wishlist.filter(p => p.id !== productId)
+      })),
+      
+      clearWishlist: () => set({ wishlist: [] }),
     }),
     {
       name: 'vs-fashion-store',
